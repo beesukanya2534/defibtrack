@@ -265,6 +265,21 @@
 
   footer.app-foot{margin-top:26px;color:var(--ink-faint);font-size:.78rem;text-align:center;}
 
+  [hidden]{display:none !important;}
+
+  /* ---------- view nav ---------- */
+  .viewnav{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap;}
+  .viewnav-btn.active{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);}
+
+  /* ---------- history overview table ---------- */
+  table.hist-overview{min-width:520px;}
+  table.hist-overview td{padding:8px;}
+  table.hist-overview tbody tr{cursor:pointer;}
+  table.hist-overview tbody tr:hover{background:var(--surface-2);}
+  table.hist-overview tr.hist-row-active{background:var(--accent-soft);}
+  #histRank .rank-row:first-child{padding-top:0;}
+  #histRank:empty::after{content:"—";color:var(--ink-faint);}
+
   /* ---------- print ---------- */
   @media print{
     body{background:#fff;}
@@ -296,6 +311,13 @@
       <span id="syncLabel">กำลังเชื่อมต่อ…</span>
     </div>
   </div>
+
+  <div class="viewnav no-print">
+    <button class="btn viewnav-btn active" id="navEntry" type="button">บันทึกข้อมูล</button>
+    <button class="btn viewnav-btn" id="navHistory" type="button">ดูข้อมูลย้อนหลัง</button>
+  </div>
+
+  <div id="viewEntry">
 
   <div class="controls no-print">
     <div class="field">
@@ -384,6 +406,43 @@
     </div>
     <div class="panel-body">
       <div class="history-list" id="historyList"><div class="history-empty">ยังไม่มีข้อมูลที่บันทึก</div></div>
+    </div>
+  </div>
+
+  </div><!-- /viewEntry -->
+
+  <div id="viewHistory" hidden>
+    <div class="panel no-print" style="margin-bottom:16px;">
+      <div class="panel-head">
+        <h2>สรุปรวมทุกเดือน</h2>
+        <span class="hint">คลิกแถวเพื่อดูรายละเอียดด้านล่าง</span>
+      </div>
+      <div class="panel-body">
+        <div class="table-scroll">
+          <table class="entry hist-overview" id="histOverview"></table>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>รายละเอียดรายเดือน</h2>
+        <div class="report-actions no-print">
+          <select id="histMonthSelect" class="month-select" aria-label="เลือกเดือนที่ต้องการดู"></select>
+          <button class="btn btn-sm" id="btnHistCopy" type="button">คัดลอกข้อความ</button>
+          <button class="btn btn-sm" id="btnHistTxt" type="button">ดาวน์โหลด .txt</button>
+          <button class="btn btn-sm" id="btnHistCsv" type="button">ดาวน์โหลด .csv</button>
+          <button class="btn btn-sm btn-accent" id="btnHistPrint" type="button">พิมพ์ / บันทึกเป็น PDF</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="panel-head" style="border:none;padding:0 0 10px;margin:0;">
+          <h2 style="font-size:.95rem;">อันดับการตรวจเช็ค</h2>
+          <span class="hint">มาก → น้อย</span>
+        </div>
+        <div id="histRank"></div>
+      </div>
+      <div class="report-body" id="histReport"></div>
     </div>
   </div>
 
@@ -621,6 +680,18 @@
   var problemNoteEl = document.getElementById("problemNote");
   var progressNote = document.getElementById("progressNote");
 
+  var viewEntry = document.getElementById("viewEntry");
+  var viewHistory = document.getElementById("viewHistory");
+  var navEntry = document.getElementById("navEntry");
+  var navHistory = document.getElementById("navHistory");
+  var histOverview = document.getElementById("histOverview");
+  var histMonthSelect = document.getElementById("histMonthSelect");
+  var histReport = document.getElementById("histReport");
+  var histRank = document.getElementById("histRank");
+  var currentView = "entry";
+  var histSelectedKey = null;
+  var histReportText = "";
+
   THAI_MONTHS.forEach(function(name, i){
     var opt = document.createElement("option");
     opt.value = i + 1;
@@ -664,11 +735,11 @@
     }).join("");
   }
 
-  function renderRanked(){
-    var total = computeTotal(state.beYear, state.month);
+  function buildRanked(model){
+    var total = computeTotal(model.beYear, model.month);
     var th = bandThresholds(total);
-    var filled = state.departments.filter(function(d){ return d.count !== ""; });
-    var blank = state.departments.filter(function(d){ return d.count === ""; });
+    var filled = model.departments.filter(function(d){ return d.count !== ""; });
+    var blank = model.departments.filter(function(d){ return d.count === ""; });
 
     filled = filled.slice().sort(function(a, b){
       var diff = Number(b.count) - Number(a.count);
@@ -676,10 +747,11 @@
       return String(a.name).localeCompare(String(b.name), "th");
     });
 
+    var html;
     if (filled.length === 0){
-      rankBody.innerHTML = '<div class="report-empty" style="padding:10px 0;">กรอกจำนวนที่เช็คเพื่อดูอันดับ</div>';
+      html = '<div class="report-empty" style="padding:10px 0;">ยังไม่มีข้อมูลที่กรอกไว้</div>';
     } else {
-      rankBody.innerHTML = filled.map(function(d, i){
+      html = filled.map(function(d, i){
         var count = clamp(Number(d.count), 0, 99999);
         var band = bandOf(count, total, th.t1, th.t2);
         var pct = total > 0 ? clamp(count / total * 100, 0, 100) : 0;
@@ -700,25 +772,30 @@
     }
 
     if (blank.length){
-      rankBody.innerHTML += '<div class="blank-list"><div class="lbl">ยังไม่กรอกข้อมูล (' + blank.length + ')</div>' +
+      html += '<div class="blank-list"><div class="lbl">ยังไม่กรอกข้อมูล (' + blank.length + ')</div>' +
         blank.map(function(d){ return '<span class="blank-chip">' + esc(d.name || "ไม่ระบุชื่อ") + '</span>'; }).join("") +
         '</div>';
     }
+    return html;
+  }
+  function renderRanked(){
+    rankBody.innerHTML = buildRanked(modelFromState());
   }
 
-  function renderReport(){
-    var total = computeTotal(state.beYear, state.month);
+  function buildReport(model){
+    var total = computeTotal(model.beYear, model.month);
     var th = bandThresholds(total);
-    var monthLabel = THAI_MONTHS[state.month - 1] + " " + state.beYear;
-    var filled = state.departments
+    var monthLabel = THAI_MONTHS[model.month - 1] + " " + model.beYear;
+    var filled = model.departments
       .filter(function(d){ return d.count !== ""; })
       .map(function(d){ return { name: (d.name || "").trim() || "(ไม่ระบุชื่อ)", count: clamp(Number(d.count), 0, 99999), note: (d.note || "").trim() }; });
 
     if (filled.length === 0){
-      reportBody.innerHTML = '<div class="report-title">สรุปรายงานการตรวจเช็คเครื่องกระตุกหัวใจไฟฟ้า (Defibrillator) ประจำเดือน' + monthLabel + '</div>' +
-        '<div class="report-empty">กรอกจำนวนที่เช็คของแต่ละหน่วยงานทางด้านซ้าย แล้วรายงานสรุปจะถูกสร้างขึ้นที่นี่โดยอัตโนมัติ</div>';
-      reportTextGlobal = "";
-      return;
+      return {
+        html: '<div class="report-title">สรุปรายงานการตรวจเช็คเครื่องกระตุกหัวใจไฟฟ้า (Defibrillator) ประจำเดือน' + esc(monthLabel) + '</div>' +
+          '<div class="report-empty">ยังไม่มีข้อมูลที่กรอกไว้สำหรับเดือนนี้</div>',
+        text: ""
+      };
     }
 
     function byCountDesc(a, b){
@@ -814,7 +891,7 @@
     }
 
     // Problem note
-    var problem = (state.problemNote || "").trim();
+    var problem = (model.problemNote || "").trim();
     if (problem){
       htmlParts.push('<div class="report-problem"><b>ปัญหาที่พบ</b> ' + esc(problem) + '</div>');
       txtLines.push("ปัญหาที่พบ " + problem);
@@ -825,8 +902,153 @@
     htmlParts.push('<div class="report-meta">' + esc(meta) + '</div>');
     txtLines.push(meta);
 
-    reportBody.innerHTML = htmlParts.join("");
-    reportTextGlobal = txtLines.join("\n");
+    return { html: htmlParts.join(""), text: txtLines.join("\n") };
+  }
+  function renderReport(){
+    var r = buildReport(modelFromState());
+    reportBody.innerHTML = r.html;
+    reportTextGlobal = r.text;
+  }
+
+  // ---------- models + shared builders for the read-only history view ----------
+  function modelFromState(){
+    return {
+      beYear: state.beYear,
+      month: state.month,
+      problemNote: state.problemNote,
+      departments: state.departments
+    };
+  }
+  function modelFromDoc(doc){
+    return {
+      beYear: doc.beYear,
+      month: doc.month,
+      problemNote: doc.problemNote || "",
+      departments: (Array.isArray(doc.departments) ? doc.departments : []).map(function(d){
+        return {
+          name: d.name || "",
+          count: (d.count === null || d.count === undefined || d.count === "") ? "" : String(d.count),
+          note: d.note || ""
+        };
+      })
+    };
+  }
+  function buildCsv(model){
+    var total = computeTotal(model.beYear, model.month);
+    var th = bandThresholds(total);
+    var rows = [["ลำดับ", "หน่วยงาน", "จำนวนที่เช็ค (เวร)", "เวรทั้งหมด", "ร้อยละ", "สถานะ", "หมายเหตุ"]];
+    var sorted = model.departments.slice().sort(function(a, b){
+      var av = a.count === "" ? -1 : Number(a.count);
+      var bv = b.count === "" ? -1 : Number(b.count);
+      if (bv !== av) return bv - av;
+      return String(a.name).localeCompare(String(b.name), "th");
+    });
+    sorted.forEach(function(d, i){
+      if (d.count === ""){
+        rows.push([i + 1, d.name, "", "", "", "ยังไม่กรอก", d.note || ""]);
+      } else {
+        var count = Number(d.count);
+        var band = bandOf(count, total, th.t1, th.t2);
+        var pct = total > 0 ? Math.round(count / total * 1000) / 10 : 0;
+        rows.push([i + 1, d.name, count, total, pct, BAND_LABEL[band], d.note || ""]);
+      }
+    });
+    function csvField(v){
+      var s = String(v == null ? "" : v);
+      if (/[",\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+      return s;
+    }
+    return "﻿" + rows.map(function(r){ return r.map(csvField).join(","); }).join("\r\n");
+  }
+  function monthSummary(doc){
+    var total = computeTotal(doc.beYear, doc.month) || doc.totalShifts || 0;
+    var th = bandThresholds(total);
+    var depts = Array.isArray(doc.departments) ? doc.departments : [];
+    var counts = depts.map(function(d){
+      return (d.count === null || d.count === undefined || d.count === "") ? null : clamp(Number(d.count), 0, 99999);
+    });
+    var filled = counts.filter(function(c){ return c !== null; });
+    var full = filled.filter(function(c){ return bandOf(c, total, th.t1, th.t2) === "full"; }).length;
+    var none = filled.filter(function(c){ return bandOf(c, total, th.t1, th.t2) === "none"; }).length;
+    var avg = (filled.length && total > 0)
+      ? Math.round(filled.reduce(function(a, c){ return a + c; }, 0) / filled.length / total * 1000) / 10
+      : 0;
+    return { total: total, deptCount: depts.length, filled: filled.length, full: full, none: none, avgPct: avg };
+  }
+  function findHistoryDoc(key){
+    for (var i = 0; i < historyDocs.length; i++){
+      if (historyDocs[i].key === key) return historyDocs[i];
+    }
+    return null;
+  }
+
+  function renderHistoryOverview(docs){
+    if (!docs.length){
+      histOverview.innerHTML = '<tbody><tr><td class="report-empty" style="padding:24px;">ยังไม่มีเดือนที่บันทึกไว้</td></tr></tbody>';
+      return;
+    }
+    var head =
+      '<thead><tr>' +
+        '<th>เดือน</th>' +
+        '<th style="text-align:right;">เวรทั้งหมด</th>' +
+        '<th style="text-align:right;">กรอกแล้ว</th>' +
+        '<th style="text-align:right;">ตรวจครบ</th>' +
+        '<th style="text-align:right;">ไม่ได้ตรวจ</th>' +
+        '<th style="text-align:right;">เฉลี่ย %</th>' +
+      '</tr></thead>';
+    var body = '<tbody>' + docs.map(function(h){
+      var s = monthSummary(h);
+      var label = h.monthLabel || (THAI_MONTHS[(h.month || 1) - 1] + " " + h.beYear);
+      var cls = h.key === histSelectedKey ? ' class="hist-row-active"' : '';
+      return (
+        '<tr data-key="' + esc(h.key) + '"' + cls + '>' +
+          '<td style="font-weight:600;">' + esc(label) + '</td>' +
+          '<td style="text-align:right;">' + s.total + '</td>' +
+          '<td style="text-align:right;">' + s.filled + '/' + s.deptCount + '</td>' +
+          '<td style="text-align:right;color:var(--band-full);">' + s.full + '</td>' +
+          '<td style="text-align:right;color:var(--band-none);">' + s.none + '</td>' +
+          '<td style="text-align:right;">' + s.avgPct + '</td>' +
+        '</tr>'
+      );
+    }).join("") + '</tbody>';
+    histOverview.innerHTML = head + body;
+  }
+
+  function renderHistoryDetail(){
+    var doc = findHistoryDoc(histSelectedKey);
+    if (!doc){
+      histReport.innerHTML = '<div class="report-empty">เลือกเดือนจากตารางด้านบนเพื่อดูรายละเอียด</div>';
+      histRank.innerHTML = "";
+      histReportText = "";
+      return;
+    }
+    var model = modelFromDoc(doc);
+    var r = buildReport(model);
+    histReport.innerHTML = r.html;
+    histReportText = r.text;
+    histRank.innerHTML = buildRanked(model);
+  }
+
+  function renderHistoryView(){
+    var docs = historyDocs.slice().sort(function(a, b){ return sortHistoryVal(b) - sortHistoryVal(a); });
+    if (docs.length && (!histSelectedKey || !findHistoryDoc(histSelectedKey))){
+      histSelectedKey = docs[0].key;
+    }
+    renderHistoryOverview(docs);
+    histMonthSelect.innerHTML = docs.map(function(h){
+      var label = h.monthLabel || (THAI_MONTHS[(h.month || 1) - 1] + " " + h.beYear);
+      return '<option value="' + esc(h.key) + '"' + (h.key === histSelectedKey ? ' selected' : '') + '>' + esc(label) + '</option>';
+    }).join("");
+    renderHistoryDetail();
+  }
+
+  function setView(v){
+    currentView = v;
+    viewEntry.hidden = v !== "entry";
+    viewHistory.hidden = v !== "history";
+    navEntry.classList.toggle("active", v === "entry");
+    navHistory.classList.toggle("active", v === "history");
+    if (v === "history") renderHistoryView();
   }
 
   function renderHistory(){
@@ -873,6 +1095,7 @@
       unsubHistory = db.collection("months").onSnapshot(function(snap){
         historyDocs = snap.docs.map(function(d){ var v = d.data() || {}; v.key = d.id; return v; });
         renderHistory();
+        if (currentView === "history") renderHistoryView();
       }, function(err){
         console.warn("history subscribe error", err);
       });
@@ -1043,34 +1266,70 @@
 
   document.getElementById("btnCsv").addEventListener("click", async function(){
     if (!downloadsCap){ toast("การดาวน์โหลดไฟล์ไม่พร้อมใช้งานในมุมมองนี้"); return; }
-    var total = computeTotal(state.beYear, state.month);
-    var th = bandThresholds(total);
-    var rows = [["ลำดับ", "หน่วยงาน", "จำนวนที่เช็ค (เวร)", "เวรทั้งหมด", "ร้อยละ", "สถานะ", "หมายเหตุ"]];
-    var sorted = state.departments.slice().sort(function(a, b){
-      var av = a.count === "" ? -1 : Number(a.count);
-      var bv = b.count === "" ? -1 : Number(b.count);
-      if (bv !== av) return bv - av;
-      return String(a.name).localeCompare(String(b.name), "th");
-    });
-    sorted.forEach(function(d, i){
-      if (d.count === ""){
-        rows.push([i + 1, d.name, "", "", "", "ยังไม่กรอก", d.note || ""]);
-      } else {
-        var count = Number(d.count);
-        var band = bandOf(count, total, th.t1, th.t2);
-        var pct = total > 0 ? Math.round(count / total * 1000) / 10 : 0;
-        rows.push([i + 1, d.name, count, total, pct, BAND_LABEL[band], d.note || ""]);
-      }
-    });
-    function csvField(v){
-      var s = String(v == null ? "" : v);
-      if (/[",\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
-      return s;
-    }
-    var csv = "﻿" + rows.map(function(r){ return r.map(csvField).join(","); }).join("\r\n");
-    var monthLabel = THAI_MONTHS[state.month - 1] + state.beYear;
+    var model = modelFromState();
+    var csv = buildCsv(model);
+    var monthLabel = THAI_MONTHS[model.month - 1] + model.beYear;
     try {
       await downloadsCap.save({ filename: "ข้อมูลตรวจเช็คDefibrillator_" + monthLabel + ".csv", data: new Blob([csv], { type: "text/csv" }) });
+    } catch (e){
+      if (e && e.code !== "declined") toast("ดาวน์โหลดไม่สำเร็จ");
+    }
+  });
+
+  // ---------- view nav + history view events ----------
+  navEntry.addEventListener("click", function(){ setView("entry"); });
+  navHistory.addEventListener("click", function(){ setView("history"); });
+
+  histMonthSelect.addEventListener("change", function(){
+    histSelectedKey = histMonthSelect.value;
+    renderHistoryView();
+  });
+  histOverview.addEventListener("click", function(e){
+    var tr = e.target.closest("tr[data-key]");
+    if (!tr) return;
+    histSelectedKey = tr.getAttribute("data-key");
+    renderHistoryView();
+  });
+  document.getElementById("btnHistPrint").addEventListener("click", function(){ window.print(); });
+  document.getElementById("btnHistCopy").addEventListener("click", async function(){
+    if (!histReportText){ toast("ยังไม่มีรายงานให้คัดลอก"); return; }
+    try {
+      await navigator.clipboard.writeText(histReportText);
+      toast("คัดลอกข้อความรายงานแล้ว");
+    } catch (e){
+      try {
+        var ta = document.createElement("textarea");
+        ta.value = histReportText;
+        ta.style.position = "fixed"; ta.style.opacity = "0";
+        document.body.appendChild(ta); ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        toast("คัดลอกข้อความรายงานแล้ว");
+      } catch (e2){
+        toast("คัดลอกไม่สำเร็จ กรุณาเลือกข้อความด้วยตนเอง");
+      }
+    }
+  });
+  document.getElementById("btnHistTxt").addEventListener("click", async function(){
+    if (!histReportText){ toast("ยังไม่มีรายงานให้ดาวน์โหลด"); return; }
+    if (!downloadsCap){ toast("การดาวน์โหลดไฟล์ไม่พร้อมใช้งานในมุมมองนี้"); return; }
+    var doc = findHistoryDoc(histSelectedKey);
+    var lbl = doc ? (THAI_MONTHS[doc.month - 1] + doc.beYear) : "";
+    try {
+      await downloadsCap.save({ filename: "สรุปตรวจเช็คDefibrillator_" + lbl + ".txt", data: histReportText });
+    } catch (e){
+      if (e && e.code !== "declined") toast("ดาวน์โหลดไม่สำเร็จ");
+    }
+  });
+  document.getElementById("btnHistCsv").addEventListener("click", async function(){
+    if (!downloadsCap){ toast("การดาวน์โหลดไฟล์ไม่พร้อมใช้งานในมุมมองนี้"); return; }
+    var doc = findHistoryDoc(histSelectedKey);
+    if (!doc){ toast("ยังไม่มีข้อมูลให้ดาวน์โหลด"); return; }
+    var model = modelFromDoc(doc);
+    var csv = buildCsv(model);
+    var lbl = THAI_MONTHS[model.month - 1] + model.beYear;
+    try {
+      await downloadsCap.save({ filename: "ข้อมูลตรวจเช็คDefibrillator_" + lbl + ".csv", data: new Blob([csv], { type: "text/csv" }) });
     } catch (e){
       if (e && e.code !== "declined") toast("ดาวน์โหลดไม่สำเร็จ");
     }
@@ -1126,6 +1385,7 @@
   window.__defibStart = function(){
     if (window.__defibStarted) return;
     window.__defibStarted = true;
+    setView("entry");
     init();
   };
   setTimeout(function(){ if (window.__defibStart) window.__defibStart(); }, 8000);
