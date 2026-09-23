@@ -9,44 +9,44 @@
   @import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap');
 
   :root{
-    --paper:#f5f2e9;
+    --paper:#eaf2fb;
     --surface:#ffffff;
-    --surface-2:#eeebe0;
-    --ink:#1a2620;
-    --ink-soft:#5c675f;
-    --ink-faint:#8b958d;
-    --line:#dbd5c4;
-    --line-strong:#c7c0aa;
-    --accent:#0e6b57;
+    --surface-2:#e8f0fa;
+    --ink:#16283c;
+    --ink-soft:#4f6b85;
+    --ink-faint:#8aa2b8;
+    --line:#d7e6f5;
+    --line-strong:#b9cfe8;
+    --accent:#2f72b8;
     --accent-ink:#ffffff;
-    --accent-soft:#dcece6;
-    --accent-soft-line:#b9d8cd;
+    --accent-soft:#dbeafc;
+    --accent-soft-line:#a9cdf0;
     --band-full:#1f8a5f;     --band-full-soft:#dcf0e4;
-    --band-high:#2870a8;     --band-high-soft:#dbe9f3;
+    --band-high:#6a4fd6;     --band-high-soft:#e6e0fb;
     --band-mid:#a8721c;      --band-mid-soft:#f5e8cf;
     --band-low:#a84e1c;      --band-low-soft:#f6ded0;
     --band-none:#9c2f3d;     --band-none-soft:#f3dade;
     --danger:#9c2f3d;
-    --shadow: 0 1px 2px rgba(26,38,32,.06), 0 6px 20px -8px rgba(26,38,32,.18);
+    --shadow: 0 1px 2px rgba(20,40,60,.08), 0 6px 20px -8px rgba(20,40,60,.20);
     --radius-md: 10px;
     --radius-lg: 16px;
   }
   @media (prefers-color-scheme: dark){
     :root:not([data-theme="light"]){
-      --paper:#111a16;
-      --surface:#17221d;
-      --surface-2:#1e2b24;
-      --ink:#eef3ee;
-      --ink-soft:#a9b7ae;
-      --ink-faint:#77857c;
-      --line:#2b3a33;
-      --line-strong:#3a4b42;
-      --accent:#4fbf9c;
-      --accent-ink:#08211b;
-      --accent-soft:#1c352b;
-      --accent-soft-line:#2f5346;
+      --paper:#0f1b2b;
+      --surface:#16263b;
+      --surface-2:#1c3049;
+      --ink:#eaf2fb;
+      --ink-soft:#a9c0d6;
+      --ink-faint:#72899e;
+      --line:#24405e;
+      --line-strong:#335777;
+      --accent:#5ea1e6;
+      --accent-ink:#08202f;
+      --accent-soft:#1c3a58;
+      --accent-soft-line:#2f5c86;
       --band-full:#54cf9b;     --band-full-soft:#163827;
-      --band-high:#74b8ec;     --band-high-soft:#152d40;
+      --band-high:#a897f0;     --band-high-soft:#2a2352;
       --band-mid:#e3b45f;      --band-mid-soft:#3a2c12;
       --band-low:#e8905f;      --band-low-soft:#3a2313;
       --band-none:#e8879a;     --band-none-soft:#3a1620;
@@ -55,20 +55,20 @@
     }
   }
   :root[data-theme="dark"]{
-    --paper:#111a16;
-    --surface:#17221d;
-    --surface-2:#1e2b24;
-    --ink:#eef3ee;
-    --ink-soft:#a9b7ae;
-    --ink-faint:#77857c;
-    --line:#2b3a33;
-    --line-strong:#3a4b42;
-    --accent:#4fbf9c;
-    --accent-ink:#08211b;
-    --accent-soft:#1c352b;
-    --accent-soft-line:#2f5346;
+    --paper:#0f1b2b;
+    --surface:#16263b;
+    --surface-2:#1c3049;
+    --ink:#eaf2fb;
+    --ink-soft:#a9c0d6;
+    --ink-faint:#72899e;
+    --line:#24405e;
+    --line-strong:#335777;
+    --accent:#5ea1e6;
+    --accent-ink:#08202f;
+    --accent-soft:#1c3a58;
+    --accent-soft-line:#2f5c86;
     --band-full:#54cf9b;     --band-full-soft:#163827;
-    --band-high:#74b8ec;     --band-high-soft:#152d40;
+    --band-high:#a897f0;     --band-high-soft:#2a2352;
     --band-mid:#e3b45f;      --band-mid-soft:#3a2c12;
     --band-low:#e8905f;      --band-low-soft:#3a2313;
     --band-none:#e8879a;     --band-none-soft:#3a1620;
@@ -99,7 +99,7 @@
   .brand{display:flex;align-items:center;gap:12px;}
   .brand-mark{
     width:44px;height:44px;border-radius:12px;flex:none;
-    background:linear-gradient(155deg,var(--accent),color-mix(in srgb, var(--accent) 60%, #0a2f27));
+    background:linear-gradient(155deg,var(--accent),color-mix(in srgb, var(--accent) 60%, #0a2540));
     display:flex;align-items:center;justify-content:center;
     box-shadow:var(--shadow);
   }
@@ -107,8 +107,19 @@
   .brand h1{font-size:1.5rem;font-weight:700;color:var(--ink);letter-spacing:.2px;}
   .brand p{margin:2px 0 0;color:var(--ink-soft);font-size:.85rem;}
 
-  .sync-note{font-size:.78rem;color:var(--ink-faint);display:flex;align-items:center;gap:6px;}
-  .sync-dot{width:7px;height:7px;border-radius:50%;background:var(--ink-faint);}
+  .topbar-right{display:flex;align-items:center;gap:14px;}
+  .topbar-mascot{
+    height:68px;width:auto;display:block;flex:none;
+    filter:drop-shadow(0 6px 14px rgba(20,40,60,.18));
+  }
+  @media (max-width:640px){ .topbar-mascot{height:52px;} }
+
+  .sync-note{
+    font-size:.78rem;color:var(--ink-soft);font-weight:600;
+    display:flex;align-items:center;gap:7px;flex:none;white-space:nowrap;
+    background:var(--surface);border-radius:99px;padding:8px 14px;box-shadow:var(--shadow);
+  }
+  .sync-dot{width:7px;height:7px;border-radius:50%;background:var(--ink-faint);flex:none;}
   .sync-dot.live{background:var(--band-full);}
   .sync-dot.busy{background:var(--band-mid);animation:pulse 1.1s ease-in-out infinite;}
   @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.35;}}
@@ -306,9 +317,12 @@
         <p>บันทึกและสรุปผลตรวจเช็คเครื่องกระตุกหัวใจไฟฟ้า (Defibrillator) รายเดือน</p>
       </div>
     </div>
-    <div class="sync-note no-print">
-      <span class="sync-dot" id="syncDot"></span>
-      <span id="syncLabel">กำลังเชื่อมต่อ…</span>
+    <div class="topbar-right no-print">
+      <img class="topbar-mascot" src="assets/nurse-defib.png" alt="" aria-hidden="true" />
+      <div class="sync-note">
+        <span class="sync-dot" id="syncDot"></span>
+        <span id="syncLabel">กำลังเชื่อมต่อ…</span>
+      </div>
     </div>
   </div>
 
