@@ -16,7 +16,12 @@
 ```
 index.html                         แอปทั้งหมดในไฟล์เดียว (HTML + CSS + JS)
 supabase/migrations/*.sql          สคีมาฐานข้อมูล (ตาราง + RLS + realtime)
+.github/workflows/keep-alive.yml   ping Supabase ทุก 3 วัน กันโปรเจกต์ถูกพัก (free tier)
 ```
+
+> Supabase แผนฟรีจะพักโปรเจกต์อัตโนมัติเมื่อไม่มีการใช้งาน ~7 วัน
+> workflow `keep-alive.yml` จะอ่านตาราง `config` ทุก 3 วันเพื่อกันไม่ให้ถูกพัก
+> ถ้า workflow ล้มเหลว (โปรเจกต์ถูกพักไปแล้ว) ให้กด Restore ใน Supabase dashboard
 
 ## การทำงาน
 

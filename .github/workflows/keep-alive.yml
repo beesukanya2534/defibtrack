@@ -1,0 +1,30 @@
+# Keeps the Supabase free-tier project from being auto-paused after ~7 days
+# of inactivity. The app is only used about once a month, so without this the
+# database is usually paused when people open it to enter data.
+name: Supabase keep-alive
+
+on:
+  schedule:
+    - cron: "17 2 */3 * *"   # every 3 days, 02:17 UTC (09:17 Bangkok)
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read config table
+        env:
+          # Same public URL + publishable key embedded in index.html (safe with RLS).
+          SUPABASE_URL: https://jkvpasfaacvxpazjtfrt.supabase.co
+          SUPABASE_KEY: sb_publishable_bqD3b_ro947ZSyeBxMs_-g_kDZfYY_p
+        run: |
+          status=$(curl -sS -o body.json -w '%{http_code}' \
+            "$SUPABASE_URL/rest/v1/config?select=key&limit=1" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY")
+          echo "HTTP $status"
+          cat body.json; echo
+          if [ "$status" != "200" ]; then
+            echo "::error::Supabase did not respond with 200 - the project may be paused. Restore it in the Supabase dashboard."
+            exit 1
+          fi
