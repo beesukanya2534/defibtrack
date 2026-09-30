@@ -268,8 +268,57 @@
   .report-h{font-weight:700;margin-bottom:3px;}
   .report-line{padding-left:20px;color:var(--ink);}
   .report-note{padding-left:34px;color:var(--ink-soft);font-size:.88rem;}
-  .report-problem{margin-top:16px;}
-  .report-problem b{font-weight:700;}
+  .report-problem{
+    margin-top:18px;padding:12px 16px;border-radius:var(--radius-md);
+    background:var(--surface-2);border-left:4px solid var(--accent);
+  }
+  .report-problem b{font-weight:700;display:block;margin-bottom:2px;}
+
+  /* structured report */
+  .rp-head{text-align:center;margin-bottom:18px;}
+  .rp-eyebrow{font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);font-weight:600;}
+  .rp-head .report-title{margin:4px 0 2px;}
+  .rp-month{font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:1.05rem;color:var(--ink-soft);}
+  .rp-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:20px;}
+  .rp-kpi{
+    border:1px solid var(--line);border-radius:var(--radius-md);padding:10px 8px;text-align:center;
+    background:var(--surface);line-height:1.3;
+  }
+  .rp-kpi b{display:block;font-family:'Chakra Petch',sans-serif;font-size:1.5rem;color:var(--k, var(--accent));}
+  .rp-kpi b small{font-size:.9rem;color:var(--ink-faint);}
+  .rp-kpi span{font-size:.76rem;color:var(--ink-soft);}
+  .rp-sec{margin-bottom:16px;border:1px solid var(--line);border-radius:var(--radius-md);overflow:hidden;}
+  .rp-sec-head{
+    display:flex;align-items:center;gap:10px;padding:8px 14px;
+    background:var(--sec-soft);border-left:5px solid var(--sec);line-height:1.4;
+  }
+  .rp-sec-num{
+    flex:none;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;
+    background:var(--sec);color:#fff;font-weight:700;font-size:.85rem;
+  }
+  .rp-sec-text{flex:1;min-width:0;}
+  .rp-sec-title{font-weight:700;color:var(--ink);}
+  .rp-sec-sub{font-size:.8rem;color:var(--ink-soft);}
+  .rp-sec-count{flex:none;font-size:.78rem;font-weight:600;color:var(--sec);white-space:nowrap;}
+  .rp-sub{font-size:.8rem;font-weight:600;color:var(--ink-soft);padding:8px 14px 0;}
+  .rp-list{
+    list-style:none;margin:0;padding:10px 14px 12px;
+    display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 22px;
+  }
+  .rp-item{line-height:1.4;break-inside:avoid;}
+  .rp-item-top{display:flex;justify-content:space-between;gap:8px;font-size:.9rem;}
+  .rp-name{font-weight:500;}
+  .rp-count{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap;}
+  .rp-count small{font-weight:400;color:var(--ink-faint);font-size:.75rem;}
+  .rp-bar{height:4px;border-radius:3px;background:var(--surface-2);margin-top:3px;overflow:hidden;}
+  .rp-bar i{display:block;height:100%;border-radius:3px;}
+  .rp-note{font-size:.76rem;color:var(--ink-soft);margin-top:2px;}
+  .rp-empty{padding:10px 14px;color:var(--ink-faint);font-size:.88rem;}
+  @media (max-width:560px){
+    .rp-kpis{grid-template-columns:repeat(2,minmax(0,1fr));}
+    .rp-list{grid-template-columns:1fr;}
+    .report-body{padding:20px 16px 24px;}
+  }
   .report-meta{margin-top:20px;font-size:.76rem;color:var(--ink-faint);border-top:1px dashed var(--line);padding-top:10px;}
   .report-empty{color:var(--ink-faint);text-align:center;padding:30px 10px;}
 
@@ -322,7 +371,32 @@
     .wrap{max-width:none;padding:0;}
     .report-panel{margin-top:0;}
     .panel{box-shadow:none;border:none;}
-    .report-body{padding:0;}
+    .report-body{padding:0;font-size:10.5pt;line-height:1.6;}
+    /* Narrative summary always starts on its own page */
+    #reportBody, #histReport{break-before:page;page-break-before:always;}
+    .rp-sec, .rp-kpis, .rp-head, .report-problem{break-inside:avoid;page-break-inside:avoid;}
+    .rp-sec-head{break-after:avoid;}
+    .rp-kpi{background:#fff;padding:6px 8px;}
+    .rp-kpi b{font-size:1.3rem;}
+    .rp-kpis{margin-bottom:14px;}
+    .rp-sec{margin-bottom:10px;}
+    .rp-sec-head{padding:6px 12px;}
+    .rp-list{grid-template-columns:repeat(3,minmax(0,1fr));gap:4px 18px;padding:8px 12px 10px;}
+    .rp-item-top{font-size:9.5pt;}
+    *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  }
+  /* Print always uses the light palette, even when the screen is in dark mode */
+  @media print{
+    :root, :root:not([data-theme="light"]), :root[data-theme="dark"]{
+      --paper:#ffffff; --surface:#ffffff; --surface-2:#eef3f9;
+      --ink:#16283c; --ink-soft:#4f6b85; --ink-faint:#8aa2b8;
+      --line:#d7e6f5; --line-strong:#b9cfe8; --accent:#2f72b8;
+      --band-full:#1f8a5f;     --band-full-soft:#dcf0e4;
+      --band-high:#6a4fd6;     --band-high-soft:#e6e0fb;
+      --band-mid:#a8721c;      --band-mid-soft:#f5e8cf;
+      --band-low:#a84e1c;      --band-low-soft:#f6ded0;
+      --band-none:#9c2f3d;     --band-none-soft:#f3dade;
+    }
   }
 </style>
 </head>
@@ -817,6 +891,81 @@
     rankBody.innerHTML = buildRanked(modelFromState());
   }
 
+  // Structured report layout (screen + print). The plain-text export is built
+  // separately in buildReport and keeps the original narrative format.
+  function reportHtml(o){
+    var total = o.total, th = o.th;
+    function item(d, band){
+      var pct = total > 0 ? clamp(d.count / total * 100, 0, 100) : 0;
+      return (
+        '<li class="rp-item">' +
+          '<div class="rp-item-top">' +
+            '<span class="rp-name">' + esc(d.name) + '</span>' +
+            '<span class="rp-count">' + d.count + '<small>/' + total + ' เวร</small></span>' +
+          '</div>' +
+          '<div class="rp-bar"><i style="width:' + pct + '%;background:var(--band-' + band + ');"></i></div>' +
+          (d.note ? '<div class="rp-note">หมายเหตุ: ' + esc(d.note) + '</div>' : '') +
+        '</li>'
+      );
+    }
+    function list(arr, band){
+      return '<ul class="rp-list">' + arr.map(function(d){ return item(d, band); }).join("") + '</ul>';
+    }
+    function section(num, band, title, sub, count, inner){
+      return (
+        '<section class="rp-sec" style="--sec:var(--band-' + band + ');--sec-soft:var(--band-' + band + '-soft);">' +
+          '<header class="rp-sec-head">' +
+            '<span class="rp-sec-num">' + num + '</span>' +
+            '<div class="rp-sec-text"><div class="rp-sec-title">' + esc(title) + '</div>' +
+              (sub ? '<div class="rp-sec-sub">' + esc(sub) + '</div>' : '') + '</div>' +
+            '<span class="rp-sec-count">' + count + ' หน่วยงาน</span>' +
+          '</header>' + inner +
+        '</section>'
+      );
+    }
+
+    var h = [];
+    h.push(
+      '<div class="rp-head">' +
+        '<div class="rp-eyebrow">DefibTrack · รายงานประจำเดือน</div>' +
+        '<div class="report-title">สรุปรายงานการตรวจเช็คเครื่องกระตุกหัวใจไฟฟ้า (Defibrillator)</div>' +
+        '<div class="rp-month">ประจำเดือน' + esc(o.monthLabel) + '</div>' +
+      '</div>' +
+      '<div class="rp-kpis">' +
+        '<div class="rp-kpi"><b>' + total + '</b><span>เวรทั้งหมด</span></div>' +
+        '<div class="rp-kpi"><b>' + o.filledCount + '<small>/' + o.deptCount + '</small></b><span>หน่วยงานที่รายงาน</span></div>' +
+        '<div class="rp-kpi" style="--k:var(--band-full);"><b>' + o.full.length + '</b><span>ตรวจครบทุกเวร</span></div>' +
+        '<div class="rp-kpi" style="--k:var(--band-none);"><b>' + o.none.length + '</b><span>ไม่ได้ตรวจเลย</span></div>' +
+      '</div>'
+    );
+
+    h.push(section(1, "full", "ตรวจเช็คครบถ้วน (" + total + " เวร)",
+      "ตรวจสอบเครื่องอย่างสม่ำเสมอครบทุกเวร", o.full.length,
+      o.full.length ? list(o.full, "full") : '<div class="rp-empty">ไม่มีหน่วยงานที่ตรวจครบในเดือนนี้</div>'));
+
+    if (o.high.length){
+      h.push(section(2, "high", "ตรวจเช็คบ่อยครั้ง (" + th.t2 + "–" + (total - 1) + " เวร)", "", o.high.length, list(o.high, "high")));
+    }
+
+    if (o.mid.length || o.low.length){
+      var inner = "";
+      if (o.mid.length) inner += '<div class="rp-sub">ช่วง ' + th.t1 + "–" + (th.t2 - 1) + ' เวร</div>' + list(o.mid, "mid");
+      if (o.low.length) inner += '<div class="rp-sub">น้อยที่สุด (1–' + (th.t1 - 1) + ' เวร)</div>' + list(o.low, "low");
+      h.push(section(3, o.low.length ? "low" : "mid", "ตรวจเช็คน้อยกว่าเกณฑ์ (ต่ำกว่า " + th.t2 + " เวร)", "",
+        o.mid.length + o.low.length, inner));
+    }
+
+    if (o.none.length){
+      h.push(section(4, "none", "ไม่ได้ตรวจเช็ค (0 เวร)", "", o.none.length, list(o.none, "none")));
+    }
+
+    if (o.problem){
+      h.push('<div class="report-problem"><b>ปัญหาที่พบ</b><div>' + esc(o.problem) + '</div></div>');
+    }
+    h.push('<div class="report-meta">' + esc(o.meta) + '</div>');
+    return h.join("");
+  }
+
   function buildReport(model){
     var total = computeTotal(model.beYear, model.month);
     var th = bandThresholds(total);
@@ -844,59 +993,47 @@
     var low  = filled.filter(function(d){ return bandOf(d.count, total, th.t1, th.t2) === "low"; }).sort(byCountDesc);
     var none = filled.filter(function(d){ return bandOf(d.count, total, th.t1, th.t2) === "none"; }).sort(byCountDesc);
 
-    var htmlParts = [];
     var txtLines = [];
 
-    htmlParts.push('<div class="report-title">สรุปรายงานการตรวจเช็คเครื่องกระตุกหัวใจไฟฟ้า (Defibrillator) ประจำเดือน' + esc(monthLabel) + '</div>');
     txtLines.push('สรุปรายงานการตรวจเช็คเครื่องกระตุกหัวใจไฟฟ้า (Defibrillator) ประจำเดือน' + monthLabel);
     txtLines.push("");
 
     // Section 1: full
     (function(){
       var head = "1. หน่วยงานที่ตรวจเช็คครบถ้วน (" + total + " เวร): เป็นกลุ่มที่มีการตรวจสอบเครื่องอย่างสม่ำเสมอครบทุกเวร";
-      htmlParts.push('<div class="report-section"><div class="report-h">' + esc(head) + '</div>');
       txtLines.push(head);
       if (full.length){
         var line = "- " + joinThaiList(full.map(function(d){ return d.name; }));
-        htmlParts.push('<div class="report-line">' + esc(line) + '</div>');
         txtLines.push("   " + line);
         full.forEach(function(d){
           if (d.note){
             var n = "หมายเหตุ: " + d.name + " – " + d.note;
-            htmlParts.push('<div class="report-note">' + esc(n) + '</div>');
             txtLines.push("     " + n);
           }
         });
       } else {
-        htmlParts.push('<div class="report-line">- ไม่มีหน่วยงานที่ตรวจครบในเดือนนี้</div>');
         txtLines.push("   - ไม่มีหน่วยงานที่ตรวจครบในเดือนนี้");
       }
-      htmlParts.push('</div>');
       txtLines.push("");
     })();
 
     // Section 2: high
     if (high.length){
       var head2 = "2. หน่วยงานที่ตรวจเช็คบ่อยครั้ง (" + th.t2 + "-" + (total - 1) + " เวร)";
-      htmlParts.push('<div class="report-section"><div class="report-h">' + esc(head2) + '</div>');
       txtLines.push(head2);
       high.forEach(function(d){
         var line = "- " + d.name + " (" + d.count + " เวร)" + (d.note ? " หมายเหตุ: " + d.note : "");
-        htmlParts.push('<div class="report-line">' + esc(line) + '</div>');
         txtLines.push("   " + line);
       });
-      htmlParts.push('</div>');
       txtLines.push("");
     }
 
     // Section 3: mid + low
     if (mid.length || low.length){
       var head3 = "3. หน่วยงานที่ตรวจเช็คน้อยกว่าเกณฑ์ (ต่ำกว่า " + th.t2 + " เวร):";
-      htmlParts.push('<div class="report-section"><div class="report-h">' + esc(head3) + '</div>');
       txtLines.push(head3);
       if (mid.length){
         var line3a = "- ช่วง " + th.t1 + "-" + (th.t2 - 1) + " เวร: ได้แก่ " + joinThaiList(mid.map(function(d){ return d.name + " (" + d.count + " เวร)"; }));
-        htmlParts.push('<div class="report-line">' + esc(line3a) + '</div>');
         txtLines.push("   " + line3a);
       }
       if (low.length){
@@ -906,38 +1043,37 @@
         } else {
           line3b = "- น้อยที่สุด (1-" + (th.t1 - 1) + " เวร): ได้แก่ " + joinThaiList(low.map(function(d){ return d.name + " (" + d.count + " เวร)"; }));
         }
-        htmlParts.push('<div class="report-line">' + esc(line3b) + '</div>');
         txtLines.push("   " + line3b);
       }
-      htmlParts.push('</div>');
       txtLines.push("");
     }
 
     // Section 4: none
     if (none.length){
       var head4 = "4. หน่วยงานที่ไม่ได้ตรวจเช็ค (0 เวร):";
-      htmlParts.push('<div class="report-section"><div class="report-h">' + esc(head4) + '</div>');
       txtLines.push(head4);
       var line4 = "- " + joinThaiList(none.map(function(d){ return d.note ? d.name + " (" + d.note + ")" : d.name; }));
-      htmlParts.push('<div class="report-line">' + esc(line4) + '</div>');
       txtLines.push("   " + line4);
-      htmlParts.push('</div>');
       txtLines.push("");
     }
 
     // Problem note
     var problem = (model.problemNote || "").trim();
     if (problem){
-      htmlParts.push('<div class="report-problem"><b>ปัญหาที่พบ</b> ' + esc(problem) + '</div>');
       txtLines.push("ปัญหาที่พบ " + problem);
       txtLines.push("");
     }
 
     var meta = "รายงานสร้างโดยอัตโนมัติจากข้อมูลที่บันทึกในระบบ ณ วันที่ " + thaiDateNow();
-    htmlParts.push('<div class="report-meta">' + esc(meta) + '</div>');
     txtLines.push(meta);
 
-    return { html: htmlParts.join(""), text: txtLines.join("\n") };
+    var html = reportHtml({
+      monthLabel: monthLabel, total: total, th: th,
+      deptCount: model.departments.length, filledCount: filled.length,
+      full: full, high: high, mid: mid, low: low, none: none,
+      problem: problem, meta: meta
+    });
+    return { html: html, text: txtLines.join("\n") };
   }
   function renderReport(){
     var r = buildReport(modelFromState());
