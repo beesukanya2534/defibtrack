@@ -318,6 +318,7 @@
     font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:1.02rem;
     text-align:center;margin-bottom:14px;color:var(--ink);
   }
+  .rp-foot{font-size:.8rem;color:var(--ink-soft);margin:4px 0 12px;}
   .rp-empty{padding:10px 14px;color:var(--ink-faint);font-size:.88rem;}
   @media (max-width:560px){
     .rp-kpis{grid-template-columns:repeat(2,minmax(0,1fr));}
@@ -447,6 +448,10 @@
     <div class="field">
       <label>เวรทั้งหมดในเดือนนี้</label>
       <div id="totalShiftsDisplay" style="padding:8px 4px;font-weight:700;font-variant-numeric:tabular-nums;">–</div>
+    </div>
+    <div class="field">
+      <label for="workDaysInput" title="ไตเทียมตรวจเช็คเฉพาะเวรเช้าวันทำการ — ค่าเริ่มต้นคือจำนวนวันจันทร์–ศุกร์ ปรับได้ถ้ามีวันหยุดนักขัตฤกษ์">วันทำการ (ไตเทียม)</label>
+      <input id="workDaysInput" class="year-input" type="number" min="1" max="31" step="1" />
     </div>
     <div class="controls-spacer"></div>
     <button class="btn" id="btnCarry" type="button">↺ ใช้รายชื่อหน่วยงานล่าสุด</button>
@@ -604,7 +609,7 @@
   var historyDocs = [];
   var currentKey = null;
   var reportTextGlobal = "";
-  var state = { beYear: 2569, month: 1, departments: [], problemNote: "" };
+  var state = { beYear: 2569, month: 1, departments: [], problemNote: "", workDays: "" };
   var unsubHistory = null;
   var suppressAutoSelect = false;
 
@@ -635,6 +640,44 @@
     return new Date(ceYear, month, 0).getDate();
   }
   function computeTotal(beYear, month){ return daysInMonth(beYear, month) * 3; }
+
+  // Departments that only check on the morning shift of working days
+  // (e.g. ไตเทียม). Their target is the month's working days, not total shifts.
+  var WORKDAY_DEPTS = ["ไตเทียม"];
+  var WORKDAY_HIGH_MIN = 13;   // 13 .. (workdays-1) = ตรวจบ่อยครั้ง; 1..12 = น้อยกว่าเกณฑ์
+  function isWorkdayDept(name){
+    var n = String(name || "").trim();
+    return WORKDAY_DEPTS.some(function(w){ return n.indexOf(w) !== -1; });
+  }
+  function weekdaysInMonth(beYear, month){
+    var ceYear = beYear - 543, n = 0, days = daysInMonth(beYear, month);
+    for (var d = 1; d <= days; d++){
+      var wd = new Date(ceYear, month - 1, d).getDay();
+      if (wd !== 0 && wd !== 6) n++;
+    }
+    return n;
+  }
+  // Working days for the month: manual value if set (holidays), else Mon–Fri count.
+  function workDaysOf(model){
+    var v = parseInt(model.workDays, 10);
+    return v > 0 ? v : weekdaysInMonth(model.beYear, model.month);
+  }
+  // Per-department target and band, honouring working-day departments.
+  function deptTarget(model, name){
+    return isWorkdayDept(name) ? workDaysOf(model) : computeTotal(model.beYear, model.month);
+  }
+  function deptBand(model, name, count){
+    if (!isWorkdayDept(name)){
+      var total = computeTotal(model.beYear, model.month);
+      var th = bandThresholds(total);
+      return bandOf(count, total, th.t1, th.t2);
+    }
+    var w = workDaysOf(model);
+    if (count >= w) return "full";
+    if (count <= 0) return "none";
+    if (count >= WORKDAY_HIGH_MIN) return "high";
+    return "low";
+  }
   function bandThresholds(total){
     var t1 = Math.max(1, Math.round(total / 3));
     var t2 = Math.max(t1 + 1, Math.round(total * 2 / 3));
@@ -765,6 +808,7 @@
     state.month = month;
     state.departments = masterList.map(blankDept);
     state.problemNote = "";
+    state.workDays = "";
     currentKey = monthKey(beYear, month);
   }
   function applyMonthDoc(key, data){
@@ -772,6 +816,7 @@
     state.beYear = data.beYear;
     state.month = data.month;
     state.problemNote = data.problemNote || "";
+    state.workDays = (data.workDaysManual && data.workDays) ? String(data.workDays) : "";
     var depts = Array.isArray(data.departments) ? data.departments : [];
     state.departments = depts.map(function(d){
       return {
@@ -789,6 +834,7 @@
   var monthSelect = document.getElementById("monthSelect");
   var yearInput = document.getElementById("yearInput");
   var totalShiftsDisplay = document.getElementById("totalShiftsDisplay");
+  var workDaysInput = document.getElementById("workDaysInput");
   var entryBody = document.getElementById("entryBody");
   var rankBody = document.getElementById("rankBody");
   var reportBody = document.getElementById("reportBody");
@@ -819,6 +865,8 @@
     monthSelect.value = state.month;
     yearInput.value = state.beYear;
     totalShiftsDisplay.textContent = computeTotal(state.beYear, state.month) + " เวร";
+    workDaysInput.value = state.workDays;
+    workDaysInput.placeholder = weekdaysInMonth(state.beYear, state.month);
     problemNoteEl.value = state.problemNote;
   }
 
@@ -826,8 +874,8 @@
     var total = computeTotal(state.beYear, state.month);
     var th = bandThresholds(total);
     var filled = state.departments.filter(function(d){ return d.count !== ""; });
-    var fullCount = filled.filter(function(d){ return bandOf(Number(d.count), total, th.t1, th.t2) === "full"; }).length;
-    var noneCount = filled.filter(function(d){ return bandOf(Number(d.count), total, th.t1, th.t2) === "none"; }).length;
+    var fullCount = filled.filter(function(d){ return deptBand(state, d.name, Number(d.count)) === "full"; }).length;
+    var noneCount = filled.filter(function(d){ return deptBand(state, d.name, Number(d.count)) === "none"; }).length;
     document.getElementById("statDepts").textContent = state.departments.length;
     document.getElementById("statFilled").textContent = filled.length + "/" + state.departments.length;
     document.getElementById("statFull").textContent = fullCount;
@@ -838,7 +886,7 @@
   function renderEntryTable(){
     var total = computeTotal(state.beYear, state.month);
     entryBody.innerHTML = state.departments.map(function(d, i){
-      var over = d.count !== "" && Number(d.count) > total;
+      var over = d.count !== "" && Number(d.count) > deptTarget(state, d.name);
       return (
         '<tr data-id="' + d.id + '">' +
           '<td class="idx">' + (i + 1) + '</td>' +
@@ -857,8 +905,11 @@
     var filled = model.departments.filter(function(d){ return d.count !== ""; });
     var blank = model.departments.filter(function(d){ return d.count === ""; });
 
+    function ratio(d){ var t = deptTarget(model, d.name); return t > 0 ? Number(d.count) / t : 0; }
     filled = filled.slice().sort(function(a, b){
-      var diff = Number(b.count) - Number(a.count);
+      var diff = ratio(b) - ratio(a);
+      if (diff !== 0) return diff;
+      diff = Number(b.count) - Number(a.count);
       if (diff !== 0) return diff;
       return String(a.name).localeCompare(String(b.name), "th");
     });
@@ -869,8 +920,9 @@
     } else {
       html = filled.map(function(d, i){
         var count = clamp(Number(d.count), 0, 99999);
-        var band = bandOf(count, total, th.t1, th.t2);
-        var pct = total > 0 ? clamp(count / total * 100, 0, 100) : 0;
+        var target = deptTarget(model, d.name);
+        var band = deptBand(model, d.name, count);
+        var pct = target > 0 ? clamp(count / target * 100, 0, 100) : 0;
         return (
           '<div class="rank-row">' +
             '<div class="rank-num">' + (i + 1) + '</div>' +
@@ -878,7 +930,7 @@
               '<div class="rank-top">' +
                 '<span class="rank-name" title="' + esc(d.name) + '">' + esc(d.name) + '</span>' +
                 '<span class="band-badge" style="color:var(--band-' + band + ');background:var(--band-' + band + '-soft);">' + BAND_LABEL[band] + '</span>' +
-                '<span class="rank-count">' + count + '/' + total + '</span>' +
+                '<span class="rank-count">' + count + '/' + target + (isWorkdayDept(d.name) ? ' วันทำการ' : '') + '</span>' +
               '</div>' +
               '<div class="rank-bar-track"><div class="rank-bar-fill" style="width:' + pct + '%;background:var(--band-' + band + ');"></div></div>' +
             '</div>' +
@@ -903,12 +955,12 @@
   function reportHtml(o){
     var total = o.total, th = o.th;
     function item(d, band){
-      var pct = total > 0 ? clamp(d.count / total * 100, 0, 100) : 0;
+      var pct = d.target > 0 ? clamp(d.count / d.target * 100, 0, 100) : 0;
       return (
         '<li class="rp-item">' +
           '<div class="rp-item-top">' +
             '<span class="rp-name">' + esc(d.name) + '</span>' +
-            '<span class="rp-count">' + d.count + '<small>/' + total + ' เวร</small></span>' +
+            '<span class="rp-count">' + d.count + '<small>/' + d.target + (d.wd ? ' วันทำการ' : ' เวร') + '</small></span>' +
           '</div>' +
           '<div class="rp-bar"><i style="width:' + pct + '%;background:var(--band-' + band + ');"></i></div>' +
           (d.note ? '<div class="rp-note">หมายเหตุ: ' + esc(d.note) + '</div>' : '') +
@@ -954,18 +1006,22 @@
       h.push(section(2, "high", "ตรวจเช็คบ่อยครั้ง (" + th.t2 + "–" + (total - 1) + " เวร)", "", o.high.length, list(o.high, "high")));
     }
 
-    if (o.mid.length || o.low.length){
+    if (o.mid.length || o.low.length || o.wlow.length){
       var inner = "";
       if (o.mid.length) inner += '<div class="rp-sub">ช่วง ' + th.t1 + "–" + (th.t2 - 1) + ' เวร</div>' + list(o.mid, "mid");
       if (o.low.length) inner += '<div class="rp-sub">น้อยที่สุด (1–' + (th.t1 - 1) + ' เวร)</div>' + list(o.low, "low");
-      h.push(section(3, o.low.length ? "low" : "mid", "ตรวจเช็คน้อยกว่าเกณฑ์ (ต่ำกว่า " + th.t2 + " เวร)", "",
-        o.mid.length + o.low.length, inner));
+      if (o.wlow.length) inner += '<div class="rp-sub">ตรวจเฉพาะเวรเช้าวันทำการ (1–' + (WORKDAY_HIGH_MIN - 1) + ' เวร)</div>' + list(o.wlow, "low");
+      h.push(section(3, (o.low.length || o.wlow.length) ? "low" : "mid", "ตรวจเช็คน้อยกว่าเกณฑ์ (ต่ำกว่า " + th.t2 + " เวร)", "",
+        o.mid.length + o.low.length + o.wlow.length, inner));
     }
 
     if (o.none.length){
       h.push(section(4, "none", "ไม่ได้ตรวจเช็ค (0 เวร)", "", o.none.length, list(o.none, "none")));
     }
 
+    if (o.wdFoot){
+      h.push('<div class="rp-foot">' + esc(o.wdFoot) + '</div>');
+    }
     if (o.narrative){
       h.push('<div class="rp-narr"><div class="rp-narr-title">สรุปรายงานแบบบรรยาย · ประจำเดือน' + esc(o.monthLabel) + '</div>' + o.narrative + '</div>');
     }
@@ -992,6 +1048,8 @@
       } else if (open && l === ""){
         out.push('</div>');
         open = false;
+      } else if (/^\* /.test(l)){
+        out.push('<div class="rp-foot">' + esc(l) + '</div>');
       }
     });
     if (open) out.push('</div>');
@@ -1004,7 +1062,17 @@
     var monthLabel = THAI_MONTHS[model.month - 1] + " " + model.beYear;
     var filled = model.departments
       .filter(function(d){ return d.count !== ""; })
-      .map(function(d){ return { name: (d.name || "").trim() || "(ไม่ระบุชื่อ)", count: clamp(Number(d.count), 0, 99999), note: (d.note || "").trim() }; });
+      .map(function(d){
+        var name = (d.name || "").trim() || "(ไม่ระบุชื่อ)";
+        var count = clamp(Number(d.count), 0, 99999);
+        return {
+          name: name, count: count, note: (d.note || "").trim(),
+          wd: isWorkdayDept(name), target: deptTarget(model, name), band: deptBand(model, name, count)
+        };
+      });
+    var workDays = workDaysOf(model);
+    // "19 เวร" for normal departments, "19/22 วันทำการ" for working-day ones.
+    function amt(d){ return d.wd ? d.count + "/" + d.target + " วันทำการ" : d.count + " เวร"; }
 
     if (filled.length === 0){
       return {
@@ -1019,11 +1087,13 @@
       if (diff !== 0) return diff;
       return a.name.localeCompare(b.name, "th");
     }
-    var full = filled.filter(function(d){ return bandOf(d.count, total, th.t1, th.t2) === "full"; }).sort(byCountDesc);
-    var high = filled.filter(function(d){ return bandOf(d.count, total, th.t1, th.t2) === "high"; }).sort(byCountDesc);
-    var mid  = filled.filter(function(d){ return bandOf(d.count, total, th.t1, th.t2) === "mid"; }).sort(byCountDesc);
-    var low  = filled.filter(function(d){ return bandOf(d.count, total, th.t1, th.t2) === "low"; }).sort(byCountDesc);
-    var none = filled.filter(function(d){ return bandOf(d.count, total, th.t1, th.t2) === "none"; }).sort(byCountDesc);
+    var full = filled.filter(function(d){ return d.band === "full"; }).sort(byCountDesc);
+    var high = filled.filter(function(d){ return d.band === "high"; }).sort(byCountDesc);
+    var mid  = filled.filter(function(d){ return d.band === "mid"; }).sort(byCountDesc);
+    var low  = filled.filter(function(d){ return d.band === "low" && !d.wd; }).sort(byCountDesc);
+    var wlow = filled.filter(function(d){ return d.band === "low" && d.wd; }).sort(byCountDesc);
+    var none = filled.filter(function(d){ return d.band === "none"; }).sort(byCountDesc);
+    var hasWd = filled.some(function(d){ return d.wd; });
 
     var txtLines = [];
 
@@ -1035,7 +1105,7 @@
       var head = "1. หน่วยงานที่ตรวจเช็คครบถ้วน (" + total + " เวร): เป็นกลุ่มที่มีการตรวจสอบเครื่องอย่างสม่ำเสมอครบทุกเวร";
       txtLines.push(head);
       if (full.length){
-        var line = "- " + joinThaiList(full.map(function(d){ return d.name; }));
+        var line = "- " + joinThaiList(full.map(function(d){ return d.wd ? d.name + " (ครบ " + d.target + " วันทำการ)" : d.name; }));
         txtLines.push("   " + line);
         full.forEach(function(d){
           if (d.note){
@@ -1054,14 +1124,14 @@
       var head2 = "2. หน่วยงานที่ตรวจเช็คบ่อยครั้ง (" + th.t2 + "-" + (total - 1) + " เวร)";
       txtLines.push(head2);
       high.forEach(function(d){
-        var line = "- " + d.name + " (" + d.count + " เวร)" + (d.note ? " หมายเหตุ: " + d.note : "");
+        var line = "- " + d.name + " (" + amt(d) + ")" + (d.note ? " หมายเหตุ: " + d.note : "");
         txtLines.push("   " + line);
       });
       txtLines.push("");
     }
 
     // Section 3: mid + low
-    if (mid.length || low.length){
+    if (mid.length || low.length || wlow.length){
       var head3 = "3. หน่วยงานที่ตรวจเช็คน้อยกว่าเกณฑ์ (ต่ำกว่า " + th.t2 + " เวร):";
       txtLines.push(head3);
       if (mid.length){
@@ -1077,6 +1147,10 @@
         }
         txtLines.push("   " + line3b);
       }
+      if (wlow.length){
+        var line3c = "- ตรวจเฉพาะเวรเช้าวันทำการ (1-" + (WORKDAY_HIGH_MIN - 1) + " เวร): ได้แก่ " + joinThaiList(wlow.map(function(d){ return d.name + " (" + amt(d) + ")"; }));
+        txtLines.push("   " + line3c);
+      }
       txtLines.push("");
     }
 
@@ -1086,6 +1160,16 @@
       txtLines.push(head4);
       var line4 = "- " + joinThaiList(none.map(function(d){ return d.note ? d.name + " (" + d.note + ")" : d.name; }));
       txtLines.push("   " + line4);
+      txtLines.push("");
+    }
+
+    // Working-day departments are judged on their own scale
+    var wdFoot = "";
+    if (hasWd){
+      var wdNames = joinThaiList(filled.filter(function(d){ return d.wd; }).map(function(d){ return d.name; }));
+      wdFoot = "* " + wdNames + " ตรวจเช็คเฉพาะเวรเช้าวันทำการ (เดือนนี้ " + workDays + " วันทำการ): ครบ = " + workDays +
+        " เวร, บ่อยครั้ง = " + WORKDAY_HIGH_MIN + "-" + (workDays - 1) + " เวร, น้อยกว่าเกณฑ์ = 1-" + (WORKDAY_HIGH_MIN - 1) + " เวร";
+      txtLines.push(wdFoot);
       txtLines.push("");
     }
 
@@ -1102,8 +1186,8 @@
     var html = reportHtml({
       monthLabel: monthLabel, total: total, th: th,
       deptCount: model.departments.length, filledCount: filled.length,
-      full: full, high: high, mid: mid, low: low, none: none,
-      problem: problem, meta: meta,
+      full: full, high: high, mid: mid, low: low, wlow: wlow, none: none,
+      wdFoot: wdFoot, problem: problem, meta: meta,
       narrative: narrativeHtml(txtLines)
     });
     return { html: html, text: txtLines.join("\n") };
@@ -1120,6 +1204,7 @@
       beYear: state.beYear,
       month: state.month,
       problemNote: state.problemNote,
+      workDays: state.workDays,
       departments: state.departments
     };
   }
@@ -1128,6 +1213,7 @@
       beYear: doc.beYear,
       month: doc.month,
       problemNote: doc.problemNote || "",
+      workDays: doc.workDays || "",
       departments: (Array.isArray(doc.departments) ? doc.departments : []).map(function(d){
         return {
           name: d.name || "",
@@ -1152,9 +1238,11 @@
         rows.push([i + 1, d.name, "", "", "", "ยังไม่กรอก", d.note || ""]);
       } else {
         var count = Number(d.count);
-        var band = bandOf(count, total, th.t1, th.t2);
-        var pct = total > 0 ? Math.round(count / total * 1000) / 10 : 0;
-        rows.push([i + 1, d.name, count, total, pct, BAND_LABEL[band], d.note || ""]);
+        var target = deptTarget(model, d.name);
+        var band = deptBand(model, d.name, count);
+        var pct = target > 0 ? Math.round(count / target * 1000) / 10 : 0;
+        var note = isWorkdayDept(d.name) ? ("เฉพาะเวรเช้าวันทำการ (" + target + " วัน)" + (d.note ? " · " + d.note : "")) : (d.note || "");
+        rows.push([i + 1, d.name, count, target, pct, BAND_LABEL[band], note]);
       }
     });
     function csvField(v){
@@ -1168,14 +1256,17 @@
     var total = computeTotal(doc.beYear, doc.month) || doc.totalShifts || 0;
     var th = bandThresholds(total);
     var depts = Array.isArray(doc.departments) ? doc.departments : [];
-    var counts = depts.map(function(d){
-      return (d.count === null || d.count === undefined || d.count === "") ? null : clamp(Number(d.count), 0, 99999);
+    var model = { beYear: doc.beYear, month: doc.month, workDays: doc.workDays || "" };
+    var filled = depts.filter(function(d){
+      return !(d.count === null || d.count === undefined || d.count === "");
+    }).map(function(d){
+      var c = clamp(Number(d.count), 0, 99999), t = deptTarget(model, d.name);
+      return { band: deptBand(model, d.name, c), ratio: t > 0 ? Math.min(c / t, 1) : 0 };
     });
-    var filled = counts.filter(function(c){ return c !== null; });
-    var full = filled.filter(function(c){ return bandOf(c, total, th.t1, th.t2) === "full"; }).length;
-    var none = filled.filter(function(c){ return bandOf(c, total, th.t1, th.t2) === "none"; }).length;
-    var avg = (filled.length && total > 0)
-      ? Math.round(filled.reduce(function(a, c){ return a + c; }, 0) / filled.length / total * 1000) / 10
+    var full = filled.filter(function(x){ return x.band === "full"; }).length;
+    var none = filled.filter(function(x){ return x.band === "none"; }).length;
+    var avg = filled.length
+      ? Math.round(filled.reduce(function(a, x){ return a + x.ratio; }, 0) / filled.length * 1000) / 10
       : 0;
     return { total: total, deptCount: depts.length, filled: filled.length, full: full, none: none, avgPct: avg };
   }
@@ -1348,6 +1439,8 @@
       month: state.month,
       monthLabel: monthLabel,
       totalShifts: total,
+      workDays: workDaysOf(state),
+      workDaysManual: !!(parseInt(state.workDays, 10) > 0),
       departments: departments,
       problemNote: (state.problemNote || "").trim(),
       updatedAt: new Date().toISOString()
@@ -1388,6 +1481,11 @@
     toast("เพิ่มรายชื่อหน่วยงานจากรายการล่าสุดแล้ว");
   });
   document.getElementById("btnSave").addEventListener("click", saveMonth);
+  workDaysInput.addEventListener("input", function(){
+    var v = parseInt(workDaysInput.value, 10);
+    state.workDays = v > 0 ? String(clamp(v, 1, 31)) : "";
+    renderEntryTable(); renderStats(); renderRanked(); renderReport();
+  });
   document.getElementById("btnAddRow").addEventListener("click", function(){
     var d = blankDept("");
     state.departments.push(d);
@@ -1408,8 +1506,7 @@
     dept[field] = t.value;
     renderStats(); renderRanked(); renderReport();
     if (field === "count"){
-      var total = computeTotal(state.beYear, state.month);
-      t.classList.toggle("over", t.value !== "" && Number(t.value) > total);
+      t.classList.toggle("over", t.value !== "" && Number(t.value) > deptTarget(state, dept.name));
     }
   });
   entryBody.addEventListener("click", function(e){
