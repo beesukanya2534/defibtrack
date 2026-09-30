@@ -313,6 +313,11 @@
   .rp-bar{height:4px;border-radius:3px;background:var(--surface-2);margin-top:3px;overflow:hidden;}
   .rp-bar i{display:block;height:100%;border-radius:3px;}
   .rp-note{font-size:.76rem;color:var(--ink-soft);margin-top:2px;}
+  .rp-narr{margin-top:22px;padding-top:18px;border-top:1px solid var(--line);}
+  .rp-narr-title{
+    font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:1.02rem;
+    text-align:center;margin-bottom:14px;color:var(--ink);
+  }
   .rp-empty{padding:10px 14px;color:var(--ink-faint);font-size:.88rem;}
   @media (max-width:560px){
     .rp-kpis{grid-template-columns:repeat(2,minmax(0,1fr));}
@@ -376,6 +381,8 @@
     #reportBody, #histReport{break-before:page;page-break-before:always;}
     .rp-sec, .rp-kpis, .rp-head, .report-problem{break-inside:avoid;page-break-inside:avoid;}
     .rp-sec-head{break-after:avoid;}
+    .rp-narr{break-before:page;page-break-before:always;margin-top:0;padding-top:0;border-top:none;}
+    .rp-narr .report-section{break-inside:avoid;}
     .rp-kpi{background:#fff;padding:6px 8px;}
     .rp-kpi b{font-size:1.3rem;}
     .rp-kpis{margin-bottom:14px;}
@@ -959,11 +966,36 @@
       h.push(section(4, "none", "ไม่ได้ตรวจเช็ค (0 เวร)", "", o.none.length, list(o.none, "none")));
     }
 
+    if (o.narrative){
+      h.push('<div class="rp-narr"><div class="rp-narr-title">สรุปรายงานแบบบรรยาย · ประจำเดือน' + esc(o.monthLabel) + '</div>' + o.narrative + '</div>');
+    }
     if (o.problem){
       h.push('<div class="report-problem"><b>ปัญหาที่พบ</b><div>' + esc(o.problem) + '</div></div>');
     }
     h.push('<div class="report-meta">' + esc(o.meta) + '</div>');
     return h.join("");
+  }
+
+  // Narrative (bulleted prose) version of the report, rendered from the same
+  // lines as the .txt export so the two never drift apart.
+  function narrativeHtml(lines){
+    var out = [], open = false;
+    lines.slice(1).forEach(function(l){
+      if (/^\d+\. /.test(l)){
+        if (open) out.push('</div>');
+        out.push('<div class="report-section"><div class="report-h">' + esc(l) + '</div>');
+        open = true;
+      } else if (open && /^ {5}\S/.test(l)){
+        out.push('<div class="report-note">' + esc(l.trim()) + '</div>');
+      } else if (open && /^ {3}\S/.test(l)){
+        out.push('<div class="report-line">' + esc(l.trim()) + '</div>');
+      } else if (open && l === ""){
+        out.push('</div>');
+        open = false;
+      }
+    });
+    if (open) out.push('</div>');
+    return out.join("");
   }
 
   function buildReport(model){
@@ -1071,7 +1103,8 @@
       monthLabel: monthLabel, total: total, th: th,
       deptCount: model.departments.length, filledCount: filled.length,
       full: full, high: high, mid: mid, low: low, none: none,
-      problem: problem, meta: meta
+      problem: problem, meta: meta,
+      narrative: narrativeHtml(txtLines)
     });
     return { html: html, text: txtLines.join("\n") };
   }
