@@ -28,3 +28,22 @@ jobs:
             echo "::error::Supabase did not respond with 200 - the project may be paused. Restore it in the Supabase dashboard."
             exit 1
           fi
+
+      # A read alone did not stop the project from pausing (it was INACTIVE
+      # the day after a successful read), so also write a heartbeat row.
+      - name: Write heartbeat row
+        env:
+          SUPABASE_URL: https://jkvpasfaacvxpazjtfrt.supabase.co
+          SUPABASE_KEY: sb_publishable_bqD3b_ro947ZSyeBxMs_-g_kDZfYY_p
+        run: |
+          now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          status=$(curl -sS -o body.json -w '%{http_code}' -X POST \
+            "$SUPABASE_URL/rest/v1/config?on_conflict=key" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: resolution=merge-duplicates,return=minimal" \
+            -d "{\"key\":\"keepalive\",\"data\":{\"at\":\"$now\"}}")
+          echo "HTTP $status"
+          cat body.json; echo
+          [ "$status" = "201" ] || [ "$status" = "200" ] || [ "$status" = "204" ]

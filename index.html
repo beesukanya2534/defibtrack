@@ -1381,7 +1381,10 @@
     var dot = document.getElementById("syncDot");
     var label = document.getElementById("syncLabel");
     dot.className = "sync-dot" + (mode === "busy" ? " busy" : mode === "live" ? " live" : "");
-    label.textContent = mode === "busy" ? "กำลังซิงก์…" : mode === "live" ? "ซิงก์ข้อมูลอัตโนมัติ" : "ไม่ได้เชื่อมต่อข้อมูล (โหมดชั่วคราว)";
+    label.textContent = mode === "busy" ? "กำลังซิงก์…"
+      : mode === "live" ? "ซิงก์ข้อมูลอัตโนมัติ"
+      : mode === "error" ? "เชื่อมต่อฐานข้อมูลไม่ได้ — ข้อมูลเก่าอาจยังไม่แสดง"
+      : "ไม่ได้เชื่อมต่อข้อมูล (โหมดชั่วคราว)";
   }
 
   function subscribeHistory(){
@@ -1656,18 +1659,19 @@
     }
 
     setSyncStatus("busy");
+    var loadFailed = false;
     try {
       var cfgSnap = await db.doc("config/departments").get();
       if (cfgSnap.exists){
         var list = cfgSnap.data().list;
         if (Array.isArray(list) && list.length) masterList = list;
       }
-    } catch (e){ console.warn(e); }
+    } catch (e){ console.warn(e); loadFailed = true; }
 
     try {
       var monthsSnap = await db.collection("months").get();
       historyDocs = monthsSnap.docs.map(function(d){ var v = d.data() || {}; v.key = d.id; return v; });
-    } catch (e){ console.warn(e); }
+    } catch (e){ console.warn(e); loadFailed = true; }
 
     if (historyDocs.length){
       var latest = historyDocs.slice().sort(function(a, b){ return sortHistoryVal(b) - sortHistoryVal(a); })[0];
@@ -1675,8 +1679,12 @@
     } else {
       setBlankMonth(initial.beYear, initial.month);
     }
-    setSyncStatus("live");
+    setSyncStatus(loadFailed ? "error" : "live");
     renderAll();
+    if (loadFailed){
+      toast("เชื่อมต่อฐานข้อมูลไม่ได้ — ห้ามบันทึกจนกว่าจะเชื่อมต่อได้ (ถ้าโปรเจกต์ Supabase ถูกพัก ให้กดกู้คืนที่แดชบอร์ด)");
+      return;
+    }
     subscribeHistory();
   }
 
