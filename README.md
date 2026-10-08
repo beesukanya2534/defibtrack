@@ -16,12 +16,25 @@
 ```
 index.html                         แอปทั้งหมดในไฟล์เดียว (HTML + CSS + JS)
 supabase/migrations/*.sql          สคีมาฐานข้อมูล (ตาราง + RLS + realtime)
-.github/workflows/keep-alive.yml   ping Supabase ทุก 3 วัน กันโปรเจกต์ถูกพัก (free tier)
+.github/workflows/keep-alive.yml   ทุก 3 วัน: กันโปรเจกต์ถูกพัก + กู้คืนอัตโนมัติถ้าถูกพัก
 ```
 
-> Supabase แผนฟรีจะพักโปรเจกต์อัตโนมัติเมื่อไม่มีการใช้งาน ~7 วัน
-> workflow `keep-alive.yml` จะอ่านตาราง `config` ทุก 3 วันเพื่อกันไม่ให้ถูกพัก
-> ถ้า workflow ล้มเหลว (โปรเจกต์ถูกพักไปแล้ว) ให้กด Restore ใน Supabase dashboard
+### Supabase keep-alive / กู้คืนอัตโนมัติ
+
+Supabase แผนฟรีจะพักโปรเจกต์เมื่อไม่มีการใช้งาน workflow `keep-alive.yml` รันทุก 3 วัน (และสั่งรันเองได้ที่แท็บ Actions):
+
+1. เปิดใช้งาน workflow ตัวเองซ้ำ — กัน GitHub ปิด schedule เมื่อ repo ไม่มีความเคลื่อนไหว 60 วัน
+2. ถ้าโปรเจกต์ถูกพัก (`INACTIVE`) → สั่ง restore ผ่าน Supabase Management API แล้วรอจนพร้อม
+3. อ่านตาราง `config` และเขียนแถว `keepalive` (heartbeat)
+
+ขั้นที่ 2 ต้องมี repository secret ชื่อ **`SUPABASE_ACCESS_TOKEN`**:
+
+1. สร้าง token ที่ <https://supabase.com/dashboard/account/tokens> (Generate new token)
+2. ใส่ที่ GitHub repo → **Settings → Secrets and variables → Actions → New repository secret**
+   ชื่อ `SUPABASE_ACCESS_TOKEN` ค่า = token ที่ได้
+
+token นี้มีสิทธิ์เต็มบัญชี Supabase — เก็บเป็น secret เท่านั้น ยกเลิกได้ทุกเมื่อที่หน้า tokens
+ถ้าไม่ได้ตั้ง secret ขั้นที่ 2 จะถูกข้าม (มี warning) ส่วนขั้นอื่นทำงานตามปกติ
 
 ## การทำงาน
 
