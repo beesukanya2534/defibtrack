@@ -574,7 +574,8 @@
 
 <!-- ===================== Supabase config ===================== -->
 <script type="module">
-  import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+  // Pinned so a new upstream release can't change behavior unannounced.
+  import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/+esm";
 
   // Public project URL + publishable (anon) key.
   // Safe to ship in a public repo: Row Level Security governs all access.
@@ -611,6 +612,9 @@
   var reportTextGlobal = "";
   var state = { beYear: 2569, month: 1, departments: [], problemNote: "", workDays: "" };
   var unsubHistory = null;
+  // False until the shown month was loaded from the DB successfully, so a
+  // blank fallback form can never be saved over an existing month.
+  var canSave = false;
   var suppressAutoSelect = false;
 
   // ---------- helpers ----------
@@ -1402,21 +1406,25 @@
 
   async function selectMonth(beYear, month, opts){
     opts = opts || {};
-    currentKey = monthKey(beYear, month);
+    var key = monthKey(beYear, month);
+    currentKey = key;
     if (db){
+      canSave = false;
       setSyncStatus("busy");
+      var ok = true, data = null;
       try {
-        var snap = await db.doc("months/" + currentKey).get();
-        if (snap.exists){
-          applyMonthDoc(currentKey, snap.data());
-        } else {
-          setBlankMonth(beYear, month);
-        }
+        var snap = await db.doc("months/" + key).get();
+        if (snap.exists) data = snap.data();
       } catch (e){
         console.warn(e);
-        setBlankMonth(beYear, month);
+        ok = false;
       }
-      setSyncStatus("live");
+      // A newer month selection superseded this request; drop the stale result.
+      if (key !== currentKey) return;
+      if (data) applyMonthDoc(key, data); else setBlankMonth(beYear, month);
+      canSave = ok;
+      setSyncStatus(ok ? "live" : "error");
+      if (!ok) toast("โหลดข้อมูลเดือนนี้ไม่สำเร็จ — รีเฟรชหน้าเว็บก่อนบันทึก");
     } else {
       setBlankMonth(beYear, month);
     }
@@ -1426,6 +1434,10 @@
   async function saveMonth(){
     if (!db){
       toast("ไม่สามารถบันทึกได้ในมุมมองนี้ — ข้อมูลจะหายเมื่อปิดหน้าต่าง");
+      return;
+    }
+    if (!canSave){
+      toast("ยังโหลดข้อมูลเดือนนี้ไม่สำเร็จ — รีเฟรชหน้าเว็บก่อนบันทึก เพื่อไม่ให้ทับข้อมูลเดิม");
       return;
     }
     var total = computeTotal(state.beYear, state.month);
@@ -1679,6 +1691,7 @@
     } else {
       setBlankMonth(initial.beYear, initial.month);
     }
+    canSave = !loadFailed;
     setSyncStatus(loadFailed ? "error" : "live");
     renderAll();
     if (loadFailed){
@@ -1691,11 +1704,27 @@
   // Boot: the Supabase module calls this once the client is ready.
   // Fallback timer keeps the app usable (offline/temporary mode) if that
   // module fails to load.
+  // If the CDN is slower than the fallback timer, the client arrives after we
+  // already started offline; connect then, unless the user has typed data
+  // that a reload of the form would wipe.
+  function hasTypedData(){
+    return !!(state.problemNote || "").trim() ||
+      state.departments.some(function(d){ return d.count !== "" || (d.note || "").trim(); });
+  }
   window.__defibStart = function(){
-    if (window.__defibStarted) return;
-    window.__defibStarted = true;
-    setView("entry");
-    init();
+    if (!window.__defibStarted){
+      window.__defibStarted = true;
+      setView("entry");
+      init();
+      return;
+    }
+    if (!db && window.DEFIB_SB){
+      if (hasTypedData()){
+        toast("เชื่อมต่อฐานข้อมูลได้แล้ว — คัดลอกข้อมูลที่กรอกไว้ แล้วรีเฟรชหน้าเว็บเพื่อบันทึก");
+      } else {
+        init();
+      }
+    }
   };
   setTimeout(function(){ if (window.__defibStart) window.__defibStart(); }, 8000);
 })();
