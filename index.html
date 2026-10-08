@@ -644,7 +644,7 @@
   // Departments that only check on the morning shift of working days
   // (e.g. ไตเทียม). Their target is the month's working days, not total shifts.
   var WORKDAY_DEPTS = ["ไตเทียม"];
-  var WORKDAY_HIGH_MIN = 13;   // 13 .. (workdays-1) = ตรวจบ่อยครั้ง; 1..12 = น้อยกว่าเกณฑ์
+  var WORKDAY_HIGH_MIN = 15;   // 15 .. (workdays-1) = ตรวจบ่อยครั้ง; 1..14 = น้อยกว่าเกณฑ์
   function isWorkdayDept(name){
     var n = String(name || "").trim();
     return WORKDAY_DEPTS.some(function(w){ return n.indexOf(w) !== -1; });
