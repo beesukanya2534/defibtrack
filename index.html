@@ -789,8 +789,12 @@
     try { fh = await dir.getFileHandle(DATA_FILE); }
     catch (e){ if (e && e.name === "NotFoundError") return null; throw e; }
     // Strip a BOM in case the file was re-saved in Notepad.
-    var s = JSON.parse((await (await fh.getFile()).text()).replace(/^﻿/, ""));
-    if (!validStore(s)) throw new Error("รูปแบบไฟล์ " + DATA_FILE + " ไม่ถูกต้อง");
+    var text = (await (await fh.getFile()).text()).replace(/^﻿/, "");
+    var s = null;
+    try { s = JSON.parse(text); } catch (e){ console.warn(e); }
+    if (!validStore(s)){
+      throw new Error("ไฟล์ " + DATA_FILE + " เสียหาย — คัดลอกไฟล์ล่าสุดจากโฟลเดอร์ backups มาแทน แล้วคลิกสถานะอีกครั้ง");
+    }
     return s;
   }
   async function writeFolderStore(dir, s){
