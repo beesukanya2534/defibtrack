@@ -136,9 +136,13 @@
     display:flex;align-items:center;gap:7px;white-space:nowrap;
     background:var(--surface);border-radius:99px;padding:8px 14px;
     box-shadow:0 6px 16px -6px rgba(6,20,40,.4);
+    border:none;font-family:inherit;cursor:pointer;max-width:calc(100% - 44px);
   }
+  .hero-status span:last-child{overflow:hidden;text-overflow:ellipsis;}
   .sync-dot{width:7px;height:7px;border-radius:50%;background:var(--ink-faint);flex:none;}
   .sync-dot.live{background:var(--band-full);}
+  .sync-dot.warn{background:var(--band-mid);}
+  .sync-dot.err{background:var(--band-none);}
   .sync-dot.busy{background:var(--band-mid);animation:pulse 1.1s ease-in-out infinite;}
   @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.35;}}
   @media (prefers-reduced-motion: reduce){ .sync-dot.busy{animation:none;} }
@@ -423,10 +427,10 @@
       <p>บันทึกและสรุปผลตรวจเช็คเครื่องกระตุกหัวใจไฟฟ้า (Defibrillator) รายเดือน</p>
     </div>
     <img class="hero-mascot" src="assets/nurse-defib.png" alt="" aria-hidden="true" />
-    <div class="hero-status no-print">
+    <button type="button" class="hero-status no-print" id="storageStatus" title="โฟลเดอร์เก็บข้อมูล">
       <span class="sync-dot" id="syncDot"></span>
-      <span id="syncLabel">กำลังเชื่อมต่อ…</span>
-    </div>
+      <span id="syncLabel">กำลังโหลดข้อมูล…</span>
+    </button>
   </div>
 
   <div class="viewnav no-print">
@@ -567,30 +571,10 @@
     </div>
   </div>
 
-  <footer class="app-foot no-print">DefibTrack · ข้อมูลจัดเก็บบน Supabase และซิงก์ให้ทุกคนที่เปิดหน้านี้เห็นตรงกัน</footer>
+  <footer class="app-foot no-print">DefibTrack · ข้อมูลเก็บเป็นไฟล์ในโฟลเดอร์ที่เลือกบนคอมพิวเตอร์เครื่องนี้</footer>
 </div>
 
 <div id="toast" role="status" aria-live="polite"></div>
-
-<!-- ===================== Supabase config ===================== -->
-<script type="module">
-  // Pinned so a new upstream release can't change behavior unannounced.
-  import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/+esm";
-
-  // Public project URL + publishable (anon) key.
-  // Safe to ship in a public repo: Row Level Security governs all access.
-  const SUPABASE_URL = "https://jkvpasfaacvxpazjtfrt.supabase.co";
-  const SUPABASE_KEY = "sb_publishable_bqD3b_ro947ZSyeBxMs_-g_kDZfYY_p";
-
-  try {
-    window.DEFIB_SB = createClient(SUPABASE_URL, SUPABASE_KEY, {
-      auth: { persistSession: false }
-    });
-  } catch (e) {
-    console.error("Supabase client init failed:", e);
-  }
-  if (window.__defibStart) window.__defibStart();
-</script>
 
 <!-- ===================== App ===================== -->
 <script>
@@ -717,68 +701,211 @@
       " เวลา " + pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + " น.";
   }
 
-  // ---------- storage adapters ----------
-  // Minimal Firestore-shaped wrapper around Supabase so the rest of the
-  // app is untouched. Each "collection" is a Postgres table of
-  // (key text primary key, data jsonb, updated_at timestamptz).
-  function makeSupabaseDb(sb){
-    function rowsToSnap(rows){
-      return {
-        docs: (rows || []).map(function(r){
-          return { id: r.key, data: function(){ return r.data; } };
-        })
-      };
+  // ---------- local storage ----------
+  // Data lives in a folder on this computer that the user picks once:
+  //   <folder>/defibtrack-data.json            the database
+  //   <folder>/backups/defibtrack-YYYY-MM-DD.json   copy of each day's last save
+  // A copy is mirrored into IndexedDB so the app can still show data before
+  // folder access is re-granted in a new session. Saving always requires the
+  // folder, so the file on disk is the source of truth.
+  var DATA_FILE = "defibtrack-data.json";
+  var IDB_NAME = "defibtrack", IDB_STORE = "kv";
+
+  function idbOpen(){
+    return new Promise(function(resolve, reject){
+      var req = indexedDB.open(IDB_NAME, 1);
+      req.onupgradeneeded = function(){ req.result.createObjectStore(IDB_STORE); };
+      req.onsuccess = function(){ resolve(req.result); };
+      req.onerror = function(){ reject(req.error); };
+    });
+  }
+  function idbGet(key){
+    return idbOpen().then(function(h){
+      return new Promise(function(resolve, reject){
+        var r = h.transaction(IDB_STORE).objectStore(IDB_STORE).get(key);
+        r.onsuccess = function(){ resolve(r.result); };
+        r.onerror = function(){ reject(r.error); };
+      });
+    });
+  }
+  function idbSet(key, val){
+    return idbOpen().then(function(h){
+      return new Promise(function(resolve, reject){
+        var tx = h.transaction(IDB_STORE, "readwrite");
+        tx.objectStore(IDB_STORE).put(val, key);
+        tx.oncomplete = function(){ resolve(); };
+        tx.onerror = function(){ reject(tx.error); };
+      });
+    });
+  }
+
+  function emptyStore(){ return { app: "DefibTrack", version: 1, savedAt: null, months: {}, config: {} }; }
+  function validStore(s){
+    return !!s && typeof s === "object" && !!s.months && typeof s.months === "object" &&
+      !!s.config && typeof s.config === "object";
+  }
+  function clone(v){ return v === undefined ? undefined : JSON.parse(JSON.stringify(v)); }
+  // Key-order-independent serialization, for comparing stores.
+  function canon(v){
+    if (Array.isArray(v)) return "[" + v.map(canon).join(",") + "]";
+    if (v && typeof v === "object"){
+      return "{" + Object.keys(v).sort().map(function(k){ return JSON.stringify(k) + ":" + canon(v[k]); }).join(",") + "}";
     }
-    function collection(name){
-      return {
-        get: function(){
-          return sb.from(name).select("key,data").then(function(res){
-            if (res.error) throw res.error;
-            return rowsToSnap(res.data);
-          });
-        },
-        onSnapshot: function(cb, errcb){
-          var active = true;
-          function reload(){
-            sb.from(name).select("key,data").then(function(res){
-              if (!active) return;
-              if (res.error){ if (errcb) errcb(res.error); return; }
-              cb(rowsToSnap(res.data));
-            });
+    return JSON.stringify(v);
+  }
+  function sameData(a, b){ return canon({ m: a.months, c: a.config }) === canon({ m: b.months, c: b.config }); }
+  // Union of both stores; when both have a document, the newer updatedAt wins.
+  function mergeStores(a, b){
+    var out = emptyStore();
+    ["months", "config"].forEach(function(c){
+      var keys = {};
+      Object.keys(a[c] || {}).forEach(function(k){ keys[k] = 1; });
+      Object.keys(b[c] || {}).forEach(function(k){ keys[k] = 1; });
+      Object.keys(keys).forEach(function(k){
+        var x = (a[c] || {})[k], y = (b[c] || {})[k];
+        if (x === undefined) out[c][k] = y;
+        else if (y === undefined) out[c][k] = x;
+        else out[c][k] = String((y && y.updatedAt) || "") > String((x && x.updatedAt) || "") ? y : x;
+      });
+    });
+    out.savedAt = [a.savedAt || "", b.savedAt || ""].sort().pop() || null;
+    return out;
+  }
+
+  var folder = {
+    supported: typeof window.showDirectoryPicker === "function",
+    handle: null,     // FileSystemDirectoryHandle, persisted in IndexedDB
+    granted: false,
+    broken: false     // data file exists but could not be read/parsed
+  };
+  async function folderPermission(handle, ask){
+    var opts = { mode: "readwrite" };
+    if ((await handle.queryPermission(opts)) === "granted") return true;
+    if (!ask) return false;
+    return (await handle.requestPermission(opts)) === "granted";
+  }
+  async function readFolderStore(dir){
+    var fh;
+    try { fh = await dir.getFileHandle(DATA_FILE); }
+    catch (e){ if (e && e.name === "NotFoundError") return null; throw e; }
+    // Strip a BOM in case the file was re-saved in Notepad.
+    var text = (await (await fh.getFile()).text()).replace(/^﻿/, "");
+    var s = null;
+    try { s = JSON.parse(text); } catch (e){ console.warn(e); }
+    if (!validStore(s)){
+      throw new Error("ไฟล์ " + DATA_FILE + " เสียหาย — คัดลอกไฟล์ล่าสุดจากโฟลเดอร์ backups มาแทน แล้วคลิกสถานะอีกครั้ง");
+    }
+    return s;
+  }
+  async function writeFolderStore(dir, s){
+    var text = JSON.stringify(s, null, 2);
+    async function put(parent, name){
+      var fh = await parent.getFileHandle(name, { create: true });
+      var w = await fh.createWritable();
+      await w.write(text);
+      await w.close();
+    }
+    await put(dir, DATA_FILE);
+    var backups = await dir.getDirectoryHandle("backups", { create: true });
+    await put(backups, "defibtrack-" + new Date().toISOString().slice(0, 10) + ".json");
+  }
+
+  // Same Firestore-shaped interface the app used with Supabase
+  // (collection().get/onSnapshot, doc().get/set), backed by an in-memory store.
+  function makeLocalDb(){
+    var store = emptyStore();
+    var listeners = { months: [], config: [] };
+    function snap(name){
+      var coll = store[name] || {};
+      return { docs: Object.keys(coll).map(function(k){
+        var v = coll[k];
+        return { id: k, data: function(){ return clone(v); } };
+      }) };
+    }
+    function notify(name){
+      (listeners[name] || []).forEach(function(cb){ try { cb(snap(name)); } catch (e){ console.warn(e); } });
+    }
+    return {
+      load: function(s){ store = s; notify("months"); notify("config"); },
+      current: function(){ return store; },
+      collection: function(name){
+        return {
+          get: function(){ return Promise.resolve(snap(name)); },
+          onSnapshot: function(cb){
+            (listeners[name] = listeners[name] || []).push(cb);
+            cb(snap(name));
+            return function(){ listeners[name] = listeners[name].filter(function(x){ return x !== cb; }); };
           }
-          reload();
-          var ch = sb.channel("defib-" + name + "-" + Math.random().toString(36).slice(2))
-            .on("postgres_changes", { event: "*", schema: "public", table: name }, reload)
-            .subscribe();
-          return function(){ active = false; try { sb.removeChannel(ch); } catch (e){} };
-        }
-      };
+        };
+      },
+      doc: function(path){
+        var parts = String(path).split("/");
+        var coll = parts.shift(), key = parts.join("/");
+        return {
+          get: function(){
+            var v = (store[coll] || {})[key];
+            return Promise.resolve({ exists: v !== undefined, data: function(){ return v === undefined ? null : clone(v); } });
+          },
+          set: async function(obj){
+            if (!folder.handle || !folder.granted || folder.broken) throw new Error("ยังไม่ได้เชื่อมโฟลเดอร์เก็บข้อมูล");
+            var next = clone(store);
+            next[coll] = next[coll] || {};
+            next[coll][key] = clone(obj);
+            next.savedAt = new Date().toISOString();
+            // Write the folder first; only commit in memory if that succeeded.
+            await writeFolderStore(folder.handle, next);
+            store = next;
+            try { await idbSet("store", next); } catch (e){ console.warn("IndexedDB mirror failed", e); }
+            notify(coll);
+          }
+        };
+      }
+    };
+  }
+
+  // Reconcile the browser copy with the folder. Returns true if the data
+  // shown in the app changed (the folder had something newer).
+  async function syncWithFolder(){
+    var current = db.current();
+    var disk = await readFolderStore(folder.handle);
+    var merged = disk ? mergeStores(disk, current) : current;
+    if (!disk || !sameData(merged, disk)) await writeFolderStore(folder.handle, merged);
+    var changed = !sameData(merged, current);
+    if (changed) db.load(merged);
+    try { await idbSet("store", merged); } catch (e){ console.warn(e); }
+    return changed;
+  }
+  async function connectFolder(){
+    try {
+      var changed = await syncWithFolder();
+      folder.broken = false;
+      if (changed) refreshMasterList();
+      return changed;
+    } catch (e){
+      folder.broken = true;
+      throw e;
+    } finally {
+      updateStorageStatus();
     }
-    function doc(path){
-      var parts = String(path).split("/");
-      var table = parts.shift();
-      var key = parts.join("/");
-      return {
-        get: function(){
-          return sb.from(table).select("data").eq("key", key).maybeSingle().then(function(res){
-            if (res.error) throw res.error;
-            return {
-              exists: !!res.data,
-              data: function(){ return res.data ? res.data.data : null; }
-            };
-          });
-        },
-        set: function(obj){
-          return sb.from(table).upsert(
-            { key: key, data: obj, updated_at: new Date().toISOString() },
-            { onConflict: "key" }
-          ).then(function(res){
-            if (res.error) throw res.error;
-          });
-        }
-      };
-    }
-    return { collection: collection, doc: doc };
+  }
+  async function chooseFolder(){
+    var dir = await window.showDirectoryPicker({ id: "defibtrack", mode: "readwrite", startIn: "documents" });
+    folder.handle = dir;
+    folder.granted = true;
+    try { await idbSet("folder", dir); } catch (e){ console.warn(e); }
+    return await connectFolder();
+  }
+  async function grantFolder(){
+    folder.granted = await folderPermission(folder.handle, true);
+    if (!folder.granted){ updateStorageStatus(); return false; }
+    return await connectFolder();
+  }
+  function updateStorageStatus(){
+    if (!folder.supported) return setSyncStatus("error", "เบราว์เซอร์นี้บันทึกลงไฟล์ไม่ได้ — ใช้ Chrome หรือ Edge");
+    if (!folder.handle) return setSyncStatus("warn", "คลิกเพื่อเลือกโฟลเดอร์เก็บข้อมูล");
+    if (!folder.granted) return setSyncStatus("warn", "คลิกเพื่อเปิดใช้โฟลเดอร์ข้อมูล (" + folder.handle.name + ")");
+    if (folder.broken) return setSyncStatus("error", "อ่านไฟล์ข้อมูลไม่ได้ — คลิกเพื่อลองใหม่");
+    setSyncStatus("live", "เก็บที่โฟลเดอร์: " + folder.handle.name);
   }
 
   // Browser-native file download (replaces the Claude "downloads" capability).
@@ -1381,14 +1508,12 @@
   }
 
   // ---------- data i/o ----------
-  function setSyncStatus(mode){
+  // mode: live | busy | warn | error
+  function setSyncStatus(mode, text){
     var dot = document.getElementById("syncDot");
     var label = document.getElementById("syncLabel");
-    dot.className = "sync-dot" + (mode === "busy" ? " busy" : mode === "live" ? " live" : "");
-    label.textContent = mode === "busy" ? "กำลังซิงก์…"
-      : mode === "live" ? "ซิงก์ข้อมูลอัตโนมัติ"
-      : mode === "error" ? "เชื่อมต่อฐานข้อมูลไม่ได้ — ข้อมูลเก่าอาจยังไม่แสดง"
-      : "ไม่ได้เชื่อมต่อข้อมูล (โหมดชั่วคราว)";
+    dot.className = "sync-dot" + ({ live: " live", busy: " busy", warn: " warn", error: " err" }[mode] || "");
+    label.textContent = text || (mode === "busy" ? "กำลังโหลดข้อมูล…" : "");
   }
 
   function subscribeHistory(){
@@ -1423,7 +1548,7 @@
       if (key !== currentKey) return;
       if (data) applyMonthDoc(key, data); else setBlankMonth(beYear, month);
       canSave = ok;
-      setSyncStatus(ok ? "live" : "error");
+      updateStorageStatus();
       if (!ok) toast("โหลดข้อมูลเดือนนี้ไม่สำเร็จ — รีเฟรชหน้าเว็บก่อนบันทึก");
     } else {
       setBlankMonth(beYear, month);
@@ -1469,7 +1594,51 @@
       toast("บันทึกข้อมูลเดือน " + monthLabel + " เรียบร้อยแล้ว");
     } catch (e){
       console.warn(e);
-      toast("บันทึกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+      toast("บันทึกไม่สำเร็จ: " + ((e && e.message) || e));
+    }
+  }
+
+  // Folder access has to be requested from a click, so the save button and
+  // the status pill both go through here before anything else awaits.
+  async function onSaveClick(){
+    if (!folder.supported){
+      toast("เบราว์เซอร์นี้บันทึกลงไฟล์ไม่ได้ — กรุณาใช้ Google Chrome หรือ Microsoft Edge");
+      return;
+    }
+    try {
+      if (!folder.handle) await chooseFolder();
+      else if (!folder.granted || folder.broken) await grantFolder();
+    } catch (e){
+      if (e && e.name === "AbortError") return;
+      console.warn(e);
+      toast("เข้าถึงโฟลเดอร์ข้อมูลไม่ได้: " + ((e && e.message) || e));
+      return;
+    }
+    if (!folder.granted){ toast("ยังไม่ได้อนุญาตให้เข้าถึงโฟลเดอร์ข้อมูล — บันทึกไม่ได้"); return; }
+    if (folder.broken){ toast("อ่านไฟล์ข้อมูลในโฟลเดอร์ไม่ได้ — บันทึกไม่ได้"); return; }
+    await saveMonth();
+  }
+
+  async function onStatusClick(){
+    if (!folder.supported) return;
+    try {
+      var changed;
+      if (!folder.handle) changed = await chooseFolder();
+      else if (!folder.granted || folder.broken) changed = await grantFolder();
+      else {
+        if (!confirm("เปลี่ยนโฟลเดอร์เก็บข้อมูล?\nตอนนี้ใช้: " + folder.handle.name + "\n(ข้อมูลปัจจุบันจะถูกคัดลอกไปโฟลเดอร์ใหม่ด้วย)")) return;
+        changed = await chooseFolder();
+      }
+      if (changed && !hasTypedData()){
+        var latest = latestHistoryDoc();
+        if (latest) applyMonthDoc(latest.key, latest);
+        renderAll();
+      }
+      if (folder.granted && !folder.broken) toast("เชื่อมโฟลเดอร์ข้อมูลแล้ว: " + folder.handle.name);
+    } catch (e){
+      if (e && e.name === "AbortError") return;
+      console.warn(e);
+      toast("เข้าถึงโฟลเดอร์ข้อมูลไม่ได้: " + ((e && e.message) || e));
     }
   }
 
@@ -1495,7 +1664,8 @@
     renderEntryTable(); renderStats(); renderRanked(); renderReport();
     toast("เพิ่มรายชื่อหน่วยงานจากรายการล่าสุดแล้ว");
   });
-  document.getElementById("btnSave").addEventListener("click", saveMonth);
+  document.getElementById("btnSave").addEventListener("click", onSaveClick);
+  document.getElementById("storageStatus").addEventListener("click", onStatusClick);
   workDaysInput.addEventListener("input", function(){
     var v = parseInt(workDaysInput.value, 10);
     state.workDays = v > 0 ? String(clamp(v, 1, 31)) : "";
@@ -1658,75 +1828,57 @@
     renderAll();
 
     downloadsCap = makeDownloadsCap();
-
-    try {
-      if (window.DEFIB_SB){
-        db = makeSupabaseDb(window.DEFIB_SB);
-      }
-    } catch (e){ console.warn(e); }
-
-    if (!db){
-      setSyncStatus("offline");
-      return;
-    }
-
+    db = makeLocalDb();
     setSyncStatus("busy");
-    var loadFailed = false;
+
+    // 1) Browser copy, so data shows immediately.
     try {
-      var cfgSnap = await db.doc("config/departments").get();
-      if (cfgSnap.exists){
-        var list = cfgSnap.data().list;
-        if (Array.isArray(list) && list.length) masterList = list;
+      var cached = await idbGet("store");
+      if (validStore(cached)) db.load(cached);
+    } catch (e){ console.warn("IndexedDB unavailable", e); }
+
+    // 2) The folder, if one was linked before and access is still granted
+    //    (Chrome/Edge can remember "allow on every visit").
+    if (folder.supported){
+      try { folder.handle = (await idbGet("folder")) || null; } catch (e){ folder.handle = null; }
+      if (folder.handle){
+        try { folder.granted = await folderPermission(folder.handle, false); } catch (e){ folder.granted = false; }
+        if (folder.granted){
+          try { await connectFolder(); }
+          catch (e){
+            console.warn(e);
+            toast("อ่านไฟล์ข้อมูลในโฟลเดอร์ไม่ได้: " + ((e && e.message) || e));
+          }
+        }
       }
-    } catch (e){ console.warn(e); loadFailed = true; }
-
-    try {
-      var monthsSnap = await db.collection("months").get();
-      historyDocs = monthsSnap.docs.map(function(d){ var v = d.data() || {}; v.key = d.id; return v; });
-    } catch (e){ console.warn(e); loadFailed = true; }
-
-    if (historyDocs.length){
-      var latest = historyDocs.slice().sort(function(a, b){ return sortHistoryVal(b) - sortHistoryVal(a); })[0];
-      applyMonthDoc(latest.key, latest);
-    } else {
-      setBlankMonth(initial.beYear, initial.month);
     }
-    canSave = !loadFailed;
-    setSyncStatus(loadFailed ? "error" : "live");
+
+    refreshMasterList();
+    var monthsSnap = await db.collection("months").get();
+    historyDocs = monthsSnap.docs.map(function(d){ var v = d.data() || {}; v.key = d.id; return v; });
+    var latest = latestHistoryDoc();
+    if (latest) applyMonthDoc(latest.key, latest);
+    else setBlankMonth(initial.beYear, initial.month);
+    canSave = true;
+    updateStorageStatus();
     renderAll();
-    if (loadFailed){
-      toast("เชื่อมต่อฐานข้อมูลไม่ได้ — ห้ามบันทึกจนกว่าจะเชื่อมต่อได้ (ถ้าโปรเจกต์ Supabase ถูกพัก ให้กดกู้คืนที่แดชบอร์ด)");
-      return;
-    }
     subscribeHistory();
   }
 
-  // Boot: the Supabase module calls this once the client is ready.
-  // Fallback timer keeps the app usable (offline/temporary mode) if that
-  // module fails to load.
-  // If the CDN is slower than the fallback timer, the client arrives after we
-  // already started offline; connect then, unless the user has typed data
-  // that a reload of the form would wipe.
+  function refreshMasterList(){
+    var cfg = db.current().config.departments;
+    if (cfg && Array.isArray(cfg.list) && cfg.list.length) masterList = cfg.list.slice();
+  }
+  function latestHistoryDoc(){
+    return historyDocs.slice().sort(function(a, b){ return sortHistoryVal(b) - sortHistoryVal(a); })[0] || null;
+  }
   function hasTypedData(){
     return !!(state.problemNote || "").trim() ||
       state.departments.some(function(d){ return d.count !== "" || (d.note || "").trim(); });
   }
-  window.__defibStart = function(){
-    if (!window.__defibStarted){
-      window.__defibStarted = true;
-      setView("entry");
-      init();
-      return;
-    }
-    if (!db && window.DEFIB_SB){
-      if (hasTypedData()){
-        toast("เชื่อมต่อฐานข้อมูลได้แล้ว — คัดลอกข้อมูลที่กรอกไว้ แล้วรีเฟรชหน้าเว็บเพื่อบันทึก");
-      } else {
-        init();
-      }
-    }
-  };
-  setTimeout(function(){ if (window.__defibStart) window.__defibStart(); }, 8000);
+
+  setView("entry");
+  init();
 })();
 </script>
 </body>

@@ -5,12 +5,8 @@ desktop.ini
 .idea/
 .vscode/
 
-# Node (only if you add tooling later)
-node_modules/
-npm-debug.log*
-
-# Supabase local dev
-supabase/.branches/
-supabase/.temp/
+# App data lives on the user's computer, never in this public repo
+defibtrack-data.json
+backups/
 .env
 .env.*
